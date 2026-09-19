@@ -75,11 +75,27 @@ ensure-build-dir:
 	@mkdir -p $(BUILD_DIR)
 
 ##
+## Run:
+.PHONY: run-app1
+run-app1: ## - Run app1
+	@echo "Running app1..."
+	@cd apps/app1 && go run .
+
+##
 ## Tests:
 .PHONY: test
 test: ## - Run tests for all services
+test: test-root test-app1
+
+.PHONY: test-root
+test-root: ## - Run tests for root module (pkg/)
 	@echo "Running tests for root module..."
 	@go test -v ./...
+
+.PHONY: test-app1
+test-app1: ## - Run tests for app1
+	@echo "Running tests for app1..."
+	@cd apps/app1 && go test -v ./...
 
 ##
 ## Modules:
