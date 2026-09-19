@@ -1,4 +1,4 @@
-package metrics
+package ps_metrics
 
 import (
 	"net/http"
