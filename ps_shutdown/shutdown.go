@@ -15,7 +15,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/crylabsorg/prostack/logger"
+	"github.com/crylabsorg/prostack-go/logger"
 )
 
 const drainDelay = 10 * time.Second

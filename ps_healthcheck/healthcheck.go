@@ -15,7 +15,7 @@ import (
 
 	"go.uber.org/zap"
 
-	"github.com/crylabsorg/prostack/logger"
+	"github.com/crylabsorg/prostack-go/logger"
 )
 
 // Probe is a readiness check. It must respect ctx and return quickly (typically

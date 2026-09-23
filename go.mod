@@ -1,4 +1,4 @@
-module github.com/crylabsorg/prostack
+module github.com/crylabsorg/prostack-go
 
 go 1.27.1
 
