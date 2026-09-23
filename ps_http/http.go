@@ -9,7 +9,7 @@ import (
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"go.uber.org/zap"
 
-	"github.com/crylabsorg/prostack/pkg/logger"
+	"github.com/crylabsorg/prostack/logger"
 )
 
 func newServer(addr string, handler http.Handler, serverName string) *http.Server {

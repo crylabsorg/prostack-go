@@ -27,7 +27,7 @@ func Init(preset Preset) func() {
 		cfg = zap.NewDevelopmentConfig()
 		cfg.EncoderConfig.EncodeLevel = zapcore.CapitalColorLevelEncoder
 	default:
-		// в проде по-умолчанию production пресет, чтобы в логи в правильном формате попало
+		// Use the production preset by default so logs are emitted in the expected format.
 		cfg = getProductionConfig()
 		isBadPreset = true
 	}
@@ -49,9 +49,9 @@ func Init(preset Preset) func() {
 
 func getProductionConfig() zap.Config {
 	cfg := zap.NewProductionConfig()
-	// отключено так как делается на уровне vector
+	// Sampling is handled by the log collector.
 	cfg.Sampling = nil
-	// чтобы был один парсер vector в разных сервисах с разными логгерами
+	// Use consistent field names for log collection across services with different loggers.
 	cfg.EncoderConfig.MessageKey = "message"
 	cfg.EncoderConfig.TimeKey = "timestamp"
 	cfg.EncoderConfig.EncodeTime = func(t time.Time, pae zapcore.PrimitiveArrayEncoder) {

@@ -5,7 +5,7 @@
 // connection-refused 5xx. New flips the draining flag (so /readyz returns 503
 // and the pod is pulled from the load balancer), waits drainDelay for the
 // deregistration to propagate, then calls cancel so the servers stop gracefully.
-package shutdown
+package ps_shutdown
 
 import (
 	"context"
@@ -15,7 +15,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/crylabsorg/prostack/pkg/logger"
+	"github.com/crylabsorg/prostack/logger"
 )
 
 const drainDelay = 10 * time.Second

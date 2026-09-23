@@ -1,4 +1,4 @@
-package config
+package ps_config
 
 import (
 	"os"

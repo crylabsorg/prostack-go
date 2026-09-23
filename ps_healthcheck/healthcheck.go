@@ -2,7 +2,7 @@
 // /startupz) on an HTTP mux. /healthz is liveness — always 200 while the
 // process is up. /readyz runs caller-supplied probes (Mongo / Redis pings)
 // and returns 503 if any probe fails; this is what k8s should be wired to.
-package healthcheck
+package ps_healthcheck
 
 import (
 	"context"
@@ -15,7 +15,7 @@ import (
 
 	"go.uber.org/zap"
 
-	"github.com/crylabsorg/prostack/pkg/logger"
+	"github.com/crylabsorg/prostack/logger"
 )
 
 // Probe is a readiness check. It must respect ctx and return quickly (typically
