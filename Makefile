@@ -1,9 +1,13 @@
+ROOT_DIR := $(abspath $(dir $(firstword $(MAKEFILE_LIST))))
+include $(ROOT_DIR)/make/consts.mk
+
 ##
 ## Tests:
 .PHONY: test
-test: ## - Run tests for all services
-	@echo "Running tests..."
-	@go test -v ./...
+test: ## Run library tests
+	@cd "$(ROOT_DIR)" && go test ./...
 
-include make/modules.mk
-include make/help.mk
+MODULE_DIRS := $(ROOT_DIR)
+
+include $(ROOT_DIR)/make/modules.mk
+include $(ROOT_DIR)/make/help.mk

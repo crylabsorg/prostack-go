@@ -1,12 +1,11 @@
-##
-## Other:
+## Help:
 .PHONY: help
-help: ## - Show help message
+help: ## Show available commands
 	@awk '\
 		BEGIN { \
-			blue   = "\033[34m"; \
+			blue = "\033[34m"; \
 			yellow = "\033[33m"; \
-			reset  = "\033[0m"; \
+			reset = "\033[0m"; \
 		} \
 		/^##[[:space:]]+/ { \
 			title = $$0; \
@@ -21,4 +20,12 @@ help: ## - Show help message
 			printf "    %s%-20s%s %s\n", blue, target, reset, desc; \
 		} \
 	' $(MAKEFILE_LIST)
+	@if [ -n "$(strip $(APP_NAMES))" ]; then \
+		printf '\n\033[33mApps:\033[0m\n'; \
+		for app in $(APP_NAMES); do \
+			printf '    \033[34m%-20s\033[0m %s\n' "build-$$app" "Build $$app"; \
+			printf '    \033[34m%-20s\033[0m %s\n' "run-$$app" "Run $$app"; \
+			printf '    \033[34m%-20s\033[0m %s\n' "test-$$app" "Test $$app"; \
+		done; \
+	fi
 	@printf '\n'

@@ -1,30 +1,20 @@
-MODULES_DIR ?= $(abspath $(dir $(lastword $(MAKEFILE_LIST)))..)
-
-##
+# The entry point selects modules: app modules at the root, library in prostack-go/.
 ## Modules:
-.PHONY: mod-download
-mod-download: ## - Run go mod download in all modules
-	@echo "Running go mod download on all modules..."
-	@find "$(MODULES_DIR)" -name "go.mod" -exec dirname {} \; | while read dir; do \
-		echo "go mod download in $$dir"; \
-		(cd $$dir && go mod download) || exit 1; \
+.PHONY: mod-download mod-tidy mod-update
+mod-download: ## Download dependencies for selected modules
+	@set -e; for dir in $(MODULE_DIRS); do \
+		echo "Downloading dependencies in $$dir"; \
+		(cd "$$dir" && go mod download); \
 	done
-	@echo "All modules downloaded successfully."
 
-.PHONY: mod-tidy
-mod-tidy: ## - Run go mod tidy in all modules
-	@echo "Running go mod tidy on all modules..."
-	@find "$(MODULES_DIR)" -name "go.mod" -exec dirname {} \; | while read dir; do \
-		echo "go mod tidy in $$dir"; \
-		(cd $$dir && go mod tidy) || exit 1; \
+mod-tidy: ## Tidy selected go.mod files
+	@set -e; for dir in $(MODULE_DIRS); do \
+		echo "Tidying $$dir"; \
+		(cd "$$dir" && go mod tidy); \
 	done
-	@echo "All modules tidied successfully."
 
-.PHONY: mod-update
-mod-update: ## - Update all dependencies (go get -u) and tidy in all modules
-	@echo "Updating dependencies in all modules..."
-	@find "$(MODULES_DIR)" -name "go.mod" -exec dirname {} \; | while read dir; do \
-		echo "go get -u ./... in $$dir"; \
-		(cd $$dir && go get -u ./... && go mod tidy) || exit 1; \
+mod-update: ## Update dependencies and tidy selected modules
+	@set -e; for dir in $(MODULE_DIRS); do \
+		echo "Updating dependencies in $$dir"; \
+		(cd "$$dir" && go get -u ./... && go mod tidy); \
 	done
-	@echo "All modules updated successfully."
