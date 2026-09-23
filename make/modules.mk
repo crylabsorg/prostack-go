@@ -1,9 +1,11 @@
+MODULES_DIR ?= $(abspath $(dir $(lastword $(MAKEFILE_LIST)))..)
+
 ##
 ## Modules:
 .PHONY: mod-download
 mod-download: ## - Run go mod download in all modules
 	@echo "Running go mod download on all modules..."
-	@find . -name "go.mod" -exec dirname {} \; | while read dir; do \
+	@find "$(MODULES_DIR)" -name "go.mod" -exec dirname {} \; | while read dir; do \
 		echo "go mod download in $$dir"; \
 		(cd $$dir && go mod download) || exit 1; \
 	done
@@ -12,7 +14,7 @@ mod-download: ## - Run go mod download in all modules
 .PHONY: mod-tidy
 mod-tidy: ## - Run go mod tidy in all modules
 	@echo "Running go mod tidy on all modules..."
-	@find . -name "go.mod" -exec dirname {} \; | while read dir; do \
+	@find "$(MODULES_DIR)" -name "go.mod" -exec dirname {} \; | while read dir; do \
 		echo "go mod tidy in $$dir"; \
 		(cd $$dir && go mod tidy) || exit 1; \
 	done
@@ -21,7 +23,7 @@ mod-tidy: ## - Run go mod tidy in all modules
 .PHONY: mod-update
 mod-update: ## - Update all dependencies (go get -u) and tidy in all modules
 	@echo "Updating dependencies in all modules..."
-	@find . -name "go.mod" -exec dirname {} \; | while read dir; do \
+	@find "$(MODULES_DIR)" -name "go.mod" -exec dirname {} \; | while read dir; do \
 		echo "go get -u ./... in $$dir"; \
 		(cd $$dir && go get -u ./... && go mod tidy) || exit 1; \
 	done
