@@ -17,7 +17,7 @@ import (
 )
 
 type GRPCServer struct {
-	*grpc.Server
+	server *grpc.Server
 }
 
 func NewServer() GRPCServer {
@@ -51,7 +51,7 @@ func NewServer() GRPCServer {
 	return GRPCServer{server}
 }
 
-func Start(ctx context.Context, address string, grpcServer GRPCServer) {
+func Start(ctx context.Context, address string, grpcServer *grpc.Server) {
 	lc := net.ListenConfig{}
 	listener, err := lc.Listen(ctx, "tcp", address)
 	if err != nil {
@@ -61,7 +61,7 @@ func Start(ctx context.Context, address string, grpcServer GRPCServer) {
 	logger.GetLogger(ctx).Info("running grpc server", zap.String("address", address))
 
 	go func() {
-		err = grpcServer.Serve(listener)
+		err = grpcServer.server.Serve(listener)
 		if err != nil {
 			logger.GetLogger(ctx).Fatal("failed to serve", zap.Error(err))
 		}
@@ -70,6 +70,6 @@ func Start(ctx context.Context, address string, grpcServer GRPCServer) {
 	<-ctx.Done()
 	logger.GetLogger(ctx).Info("start shutdown grpc server")
 
-	grpcServer.GracefulStop()
+	grpcServer.server.GracefulStop()
 	logger.GetLogger(ctx).Info("grpc server gracefully stopped")
 }

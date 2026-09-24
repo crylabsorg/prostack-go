@@ -10,13 +10,11 @@ import (
 type Preset string
 
 const (
-	PresetProduction  = "production"
-	PresetDevelopment = "development"
+	PresetProduction  Preset = "production"
+	PresetDevelopment Preset = "development"
 )
 
 func Init(preset Preset) func() {
-	var log *zap.Logger
-
 	isBadPreset := false
 
 	var cfg zap.Config
@@ -32,8 +30,7 @@ func Init(preset Preset) func() {
 		isBadPreset = true
 	}
 
-	var err error
-	log, err = cfg.Build()
+	log, err := cfg.Build()
 	if err != nil {
 		panic(err)
 	}
