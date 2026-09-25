@@ -3,6 +3,7 @@ package ps_otel
 import (
 	"context"
 	"net/http"
+	"time"
 
 	"go.opentelemetry.io/contrib/exporters/autoexport"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
@@ -31,7 +32,10 @@ func InitOTELTraces(ctx context.Context, serviceName string) func() {
 	http.DefaultTransport = otelhttp.NewTransport(nil)
 
 	shutdown := func() {
-		if shutdownErr := tp.Shutdown(ctx); shutdownErr != nil {
+		const timeout = 10 * time.Second
+		shutdownCtx, shutdownCancel := context.WithTimeout(context.WithoutCancel(ctx), timeout)
+		defer shutdownCancel()
+		if shutdownErr := tp.Shutdown(shutdownCtx); shutdownErr != nil {
 			logger.GetLogger(ctx).Error("failed to shutdown tracer provider", zap.Error(shutdownErr))
 		}
 	}

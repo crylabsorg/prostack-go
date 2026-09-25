@@ -63,6 +63,30 @@ func TestNewAllowsMissingConfigFiles(t *testing.T) {
 	require.NoError(t, New(&cfg))
 }
 
+func TestNewDoesNotExportEmptyValue(t *testing.T) {
+	for _, tc := range []struct{ name, contents string }{
+		{"missing", ""},
+		{"empty", "optional: ''\n"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Chdir(t.TempDir())
+			t.Setenv("PS_CONFIG_OPTIONAL", "")
+			require.NoError(t, os.Unsetenv("PS_CONFIG_OPTIONAL"))
+			if tc.contents != "" {
+				writeFile(t, "config.yaml", tc.contents)
+			}
+
+			var cfg struct {
+				Optional string `mapstructure:"optional" env:"PS_CONFIG_OPTIONAL"`
+			}
+			require.NoError(t, New(&cfg))
+			require.Empty(t, cfg.Optional)
+			_, exists := os.LookupEnv("PS_CONFIG_OPTIONAL")
+			require.False(t, exists)
+		})
+	}
+}
+
 func TestNewReturnsErrorForUnknownField(t *testing.T) {
 	t.Chdir(t.TempDir())
 	writeFile(t, "config.yaml", "host: example.com\nunknown: value\n")

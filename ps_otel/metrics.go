@@ -3,6 +3,7 @@ package ps_otel
 import (
 	"context"
 	"net/http"
+	"time"
 
 	"github.com/crylabsorg/prostack-go/logger"
 	"github.com/prometheus/client_golang/prometheus"
@@ -45,7 +46,10 @@ func InitOTELMetrics(ctx context.Context, mux *http.ServeMux) func() {
 	}
 
 	shutdown := func() {
-		if shutdownErr := mp.Shutdown(ctx); shutdownErr != nil {
+		const timeout = 10 * time.Second
+		shutdownCtx, shutdownCancel := context.WithTimeout(context.WithoutCancel(ctx), timeout)
+		defer shutdownCancel()
+		if shutdownErr := mp.Shutdown(shutdownCtx); shutdownErr != nil {
 			logger.GetLogger(ctx).Error("failed to shutdown metrics provider", zap.Error(shutdownErr))
 		}
 	}
