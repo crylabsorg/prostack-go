@@ -8,20 +8,19 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
-//nolint:gochecknoglobals // fine
-var registry = func() *prometheus.Registry {
+type Registry struct {
+	*prometheus.Registry
+}
+
+func New() Registry {
 	r := prometheus.NewRegistry()
 	r.MustRegister(collectors.NewGoCollector())
 	r.MustRegister(collectors.NewBuildInfoCollector())
 	r.MustRegister(collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}))
-	return r
-}()
-
-func GetRegistry() *prometheus.Registry {
-	return registry
+	return Registry{r}
 }
 
-func Register(mux *http.ServeMux) {
-	handler := promhttp.HandlerFor(GetRegistry(), promhttp.HandlerOpts{})
+func (r Registry) Register(mux *http.ServeMux) {
+	handler := promhttp.HandlerFor(r, promhttp.HandlerOpts{})
 	mux.Handle("GET /metrics", handler)
 }

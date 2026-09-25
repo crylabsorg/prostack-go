@@ -39,6 +39,10 @@ func newWithPaths(cfg any, paths []string) error {
 		return err
 	}
 
+	if err := exportEnv(cfg); err != nil {
+		return err
+	}
+
 	return nil
 }
 
@@ -55,6 +59,22 @@ func bindTags(v *viper.Viper, iface any) error {
 			if err := v.BindEnv(envName, envName); err != nil {
 				return fmt.Errorf("failed to bind env %s: %w", envName, err)
 			}
+		}
+	}
+	return nil
+}
+
+func exportEnv(cfg any) error {
+	for field, value := range reflect.ValueOf(cfg).Elem().Fields() {
+		name := field.Tag.Get("env")
+		if name == "" || value.Kind() != reflect.String || value.String() == "" {
+			continue
+		}
+		if _, exists := os.LookupEnv(name); exists {
+			continue
+		}
+		if err := os.Setenv(name, value.String()); err != nil {
+			return fmt.Errorf("set %s: %w", name, err)
 		}
 	}
 	return nil

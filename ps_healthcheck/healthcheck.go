@@ -47,7 +47,7 @@ type handler struct {
 // Register installs the standard probes on mux. For deployments without
 // dependency probes, pass an empty Options{} — readyz then trivially returns
 // 200.
-func Register(mux *http.ServeMux, opt Options) {
+func Register(mux *http.ServeMux, opt *Options) {
 	h := &handler{
 		probes:       opt.Probes,
 		startupReady: opt.StartupReady,
@@ -109,7 +109,7 @@ func (h *handler) readyz(w http.ResponseWriter, r *http.Request) {
 		errs = append(errs, err)
 	}
 
-	if len(failures) > 0 {
+	if len(errs) > 0 {
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 		w.WriteHeader(http.StatusServiceUnavailable)
 		_, err := w.Write([]byte(errors.Join(errs...).Error()))

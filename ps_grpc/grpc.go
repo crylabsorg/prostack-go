@@ -3,6 +3,7 @@ package ps_grpc
 
 import (
 	"context"
+	"errors"
 	"net"
 	"time"
 
@@ -12,15 +13,13 @@ import (
 	"go.uber.org/zap"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/health"
+	healthgrpc "google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/keepalive"
 	"google.golang.org/grpc/reflection"
 )
 
-type GRPCServer struct {
-	server *grpc.Server
-}
-
-func NewServer() GRPCServer {
+func NewServer(healthServer *health.Server) *grpc.Server {
 	const (
 		maxConnectionIdle     = 15 * time.Second
 		maxConnectionAge      = 60 * time.Second
@@ -48,28 +47,36 @@ func NewServer() GRPCServer {
 	}
 	server := grpc.NewServer(serverOptions...)
 	reflection.Register(server)
-	return GRPCServer{server}
+	healthgrpc.RegisterHealthServer(server, healthServer)
+	return server
 }
 
 func Start(ctx context.Context, address string, grpcServer *grpc.Server) {
 	lc := net.ListenConfig{}
 	listener, err := lc.Listen(ctx, "tcp", address)
 	if err != nil {
-		logger.GetLogger(ctx).Fatal("failed to listen", zap.Error(err))
+		logger.GetLogger(ctx).Fatal("failed to listen for gRPC", zap.String("address", address), zap.Error(err))
 	}
+	defer listener.Close()
 
 	logger.GetLogger(ctx).Info("running grpc server", zap.String("address", address))
 
-	go func() {
-		err = grpcServer.server.Serve(listener)
-		if err != nil {
-			logger.GetLogger(ctx).Fatal("failed to serve", zap.Error(err))
-		}
-	}()
+	errCh := make(chan error, 1)
+	go func() { errCh <- grpcServer.Serve(listener) }()
 
-	<-ctx.Done()
+	select {
+	case err := <-errCh:
+		if err != nil && !errors.Is(err, grpc.ErrServerStopped) {
+			logger.GetLogger(ctx).Fatal("failed to serve gRPC", zap.Error(err))
+		}
+		return
+	case <-ctx.Done():
+	}
 	logger.GetLogger(ctx).Info("start shutdown grpc server")
 
-	grpcServer.server.GracefulStop()
+	grpcServer.GracefulStop()
+	if err := <-errCh; err != nil && !errors.Is(err, grpc.ErrServerStopped) {
+		logger.GetLogger(ctx).Fatal("failed to stop gRPC", zap.Error(err))
+	}
 	logger.GetLogger(ctx).Info("grpc server gracefully stopped")
 }

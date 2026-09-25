@@ -3,6 +3,7 @@ package logger
 import (
 	"time"
 
+	"go.opentelemetry.io/contrib/bridges/otelzap"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 )
@@ -30,7 +31,15 @@ func Init(preset Preset) func() {
 		isBadPreset = true
 	}
 
-	log, err := cfg.Build()
+	log, err := cfg.Build(
+		zap.WrapCore(func(core zapcore.Core) zapcore.Core {
+			return zapcore.NewTee(
+				core,
+				otelzap.NewCore("logger"),
+			)
+		}),
+		zap.IncreaseLevel(cfg.Level),
+	)
 	if err != nil {
 		panic(err)
 	}

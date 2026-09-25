@@ -52,12 +52,11 @@ func Run(ctx context.Context, addr string, handler http.Handler, serverName stri
 
 	// Give outstanding requests a deadline for completion.
 	const timeout = 5 * time.Second
-	var cancel context.CancelFunc
-	ctx, cancel = context.WithTimeout(ctx, timeout)
+	shutdownCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), timeout)
 	defer cancel()
 
 	// Asking listener to shut down and shed load.
-	err := s.Shutdown(ctx)
+	err := s.Shutdown(shutdownCtx)
 	if err != nil {
 		return err
 	}
