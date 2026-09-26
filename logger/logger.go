@@ -34,7 +34,7 @@ func Init(preset Preset) func() {
 	log, err := cfg.Build(
 		zap.WrapCore(func(core zapcore.Core) zapcore.Core {
 			return zapcore.NewTee(
-				core,
+				traceCore{core},
 				otelzap.NewCore("logger"),
 			)
 		}),

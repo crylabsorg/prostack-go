@@ -55,8 +55,8 @@ func Run[C Config](getConfig func() (C, error), setup func(context.Context, C, *
 	defer logger.Init(cfg.GetLogPreset())()
 
 	mux := http.NewServeMux()
-	defer ps_otel.InitOTELTraces(ctx, cfg.GetServiceName())()
-	defer ps_otel.InitOTELMetrics(ctx, mux)()
+	defer ps_otel.InitTraces(ctx, cfg.GetServiceName())()
+	defer ps_otel.InitMetrics(ctx, mux)()
 
 	app := &App{}
 	app.Mux = mux

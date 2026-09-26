@@ -5,6 +5,7 @@ import (
 
 	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 )
 
 func GetLogger(ctx context.Context) *zap.Logger {
@@ -14,13 +15,33 @@ func GetLogger(ctx context.Context) *zap.Logger {
 		return logger
 	}
 
-	span := trace.SpanFromContext(ctx)
-	if !span.SpanContext().IsValid() {
-		return logger
-	}
+	return logger.With(zap.Any("context", ctx))
+}
 
-	return logger.With(
-		zap.String("traceId", span.SpanContext().TraceID().String()),
-		zap.String("spanId", span.SpanContext().SpanID().String()),
-	)
+// traceCore converts the context field to trace IDs only for the stdout core.
+// The OTel core receives the original context and extracts trace information itself.
+type traceCore struct{ zapcore.Core }
+
+func (c traceCore) With(fields []zapcore.Field) zapcore.Core {
+	return traceCore{c.Core.With(traceFields(fields))}
+}
+
+func traceFields(fields []zapcore.Field) []zapcore.Field {
+	result := make([]zapcore.Field, 0, len(fields)+2)
+	for _, field := range fields {
+		ctx, ok := field.Interface.(context.Context)
+		if !ok {
+			result = append(result, field)
+			continue
+		}
+
+		spanContext := trace.SpanFromContext(ctx).SpanContext()
+		if spanContext.IsValid() {
+			result = append(result,
+				zap.String("traceId", spanContext.TraceID().String()),
+				zap.String("spanId", spanContext.SpanID().String()),
+			)
+		}
+	}
+	return result
 }

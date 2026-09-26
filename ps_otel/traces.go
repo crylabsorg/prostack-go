@@ -15,7 +15,7 @@ import (
 	"github.com/crylabsorg/prostack-go/logger"
 )
 
-func InitOTELTraces(ctx context.Context, serviceName string) func() {
+func InitTraces(ctx context.Context, serviceName string) func() {
 	exporter, err := autoexport.NewSpanExporter(ctx)
 	if err != nil {
 		logger.GetLogger(ctx).Fatal("failed to create trace exporter", zap.Error(err))

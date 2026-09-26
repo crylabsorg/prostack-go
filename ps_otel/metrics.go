@@ -16,7 +16,7 @@ import (
 	"go.uber.org/zap"
 )
 
-func InitOTELMetrics(ctx context.Context, mux *http.ServeMux) func() {
+func InitMetrics(ctx context.Context, mux *http.ServeMux) func() {
 	autoexport.RegisterMetricReader("ps_prometheus", func(context.Context) (metric.Reader, error) {
 		registry := prometheus.NewRegistry()
 
