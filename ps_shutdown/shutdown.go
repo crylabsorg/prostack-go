@@ -23,7 +23,7 @@ const drainDelay = 10 * time.Second
 // New installs the SIGTERM/Interrupt handler and returns the draining flag to
 // feed into healthcheck.Options.Draining. On the first signal it sets the flag
 // (so /readyz returns 503 immediately), waits the drain window, then calls
-// cancel — pass the cancel of the context that drives su_http.Run / su_grpc.Start
+// cancel — pass the cancel of the context that drives ps_http.Run / ps_grpc.Start
 // so listeners stay up until the pod has been deregistered.
 func New(cancel context.CancelFunc) *atomic.Bool {
 	signalCtx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)

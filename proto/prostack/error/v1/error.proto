@@ -1,0 +1,12 @@
+edition = "2024";
+
+package prostack.error.v1;
+
+import "google/protobuf/struct.proto";
+
+// Error
+message Error {
+  int32 error_code = 1;
+  google.protobuf.ListValue args = 2;
+  int32 http_status = 3;
+}

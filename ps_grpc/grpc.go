@@ -31,7 +31,7 @@ func NewServer(healthServer *health.Server) *grpc.Server {
 
 	serverOptions := []grpc.ServerOption{
 		grpc.Creds(insecure.NewCredentials()),
-		grpc.ChainUnaryInterceptor(RecoveryInterceptor),
+		grpc.ChainUnaryInterceptor(RecoveryInterceptor, ErrorInterceptor),
 		grpc.StatsHandler(otelgrpc.NewServerHandler()),
 		grpc.KeepaliveParams(keepalive.ServerParameters{
 			MaxConnectionIdle:     maxConnectionIdle,     // Close idle connections.
