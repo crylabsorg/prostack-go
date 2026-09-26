@@ -28,4 +28,13 @@ help: ## Show available commands
 			printf '    \033[34m%-20s\033[0m %s\n' "test-$$app" "Test $$app"; \
 		done; \
 	fi
+	@if [ -n "$(strip $(MIGRATION_APP_NAMES))" ]; then \
+		printf '\n\033[33mMigration apps:\033[0m\n'; \
+		for app in $(MIGRATION_APP_NAMES); do \
+			printf '    \033[34m%-20s\033[0m %s\n' "migrate-up-$$app" "Apply $$app migrations"; \
+			printf '    \033[34m%-20s\033[0m %s\n' "migrate-status-$$app" "Show $$app migration status"; \
+			printf '    \033[34m%-20s\033[0m %s\n' "migrate-new-$$app" "Create $$app migration (NAME=description)"; \
+			printf '    \033[34m%-20s\033[0m %s\n' "migrate-hash-$$app" "Recompute $$app migration checksum"; \
+		done; \
+	fi
 	@printf '\n'
