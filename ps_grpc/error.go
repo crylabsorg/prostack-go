@@ -4,9 +4,11 @@ package ps_grpc
 import (
 	"context"
 	"errors"
+	"net/http"
 
 	"github.com/go-playground/validator/v10"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 
 	"github.com/crylabsorg/prostack-go/ps_error"
 )
@@ -31,6 +33,14 @@ func ErrorInterceptor(
 		case errors.As(err, &suErr1):
 			return nil, suErr1.ToGRPCError()
 		}
+		return nil, ps_error.PSError{
+			ErrorCode:     ps_error.ErrorCodeGeneral,
+			Message:       "internal server error",
+			Args:          nil,
+			HStatus:       http.StatusInternalServerError,
+			GStatus:       codes.Internal,
+			OriginalError: err,
+		}.ToGRPCError()
 	}
 	return resp, err
 }

@@ -33,7 +33,7 @@ help: ## Show available commands
 		for app in $(MIGRATION_APP_NAMES); do \
 			printf '    \033[34m%-20s\033[0m %s\n' "migrate-up-$$app" "Apply $$app migrations"; \
 			printf '    \033[34m%-20s\033[0m %s\n' "migrate-status-$$app" "Show $$app migration status"; \
-			printf '    \033[34m%-20s\033[0m %s\n' "migrate-new-$$app" "Create $$app migration (NAME=description)"; \
+			printf '    \033[34m%-20s\033[0m %s\n' "migrate-new-$$app" "Create dated $$app migration"; \
 			printf '    \033[34m%-20s\033[0m %s\n' "migrate-hash-$$app" "Recompute $$app migration checksum"; \
 		done; \
 	fi
