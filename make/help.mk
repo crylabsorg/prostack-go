@@ -34,6 +34,7 @@ help: ## Show available commands
 			printf '    \033[34m%-20s\033[0m %s\n' "migrate-up-$$app" "Apply $$app migrations"; \
 			printf '    \033[34m%-20s\033[0m %s\n' "migrate-status-$$app" "Show $$app migration status"; \
 			printf '    \033[34m%-20s\033[0m %s\n' "migrate-new-$$app" "Create dated $$app migration"; \
+			printf '    \033[34m%-20s\033[0m %s\n' "migrate-diff-$$app" "Generate $$app migration from schema.sql"; \
 			printf '    \033[34m%-20s\033[0m %s\n' "migrate-hash-$$app" "Recompute $$app migration checksum"; \
 		done; \
 	fi
