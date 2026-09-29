@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"reflect"
+	"strings"
 
 	"github.com/go-playground/validator/v10"
 	"github.com/spf13/viper"
@@ -17,10 +18,6 @@ func New(cfg any) error {
 func newWithPaths(cfg any, paths []string) error {
 	v := viper.New()
 
-	if err := bindTags(v, cfg); err != nil {
-		return err
-	}
-
 	v.SetConfigType("yaml")
 	for _, path := range paths {
 		v.SetConfigFile(path)
@@ -31,7 +28,15 @@ func newWithPaths(cfg any, paths []string) error {
 		}
 	}
 
-	if err := v.UnmarshalExact(cfg); err != nil {
+	if err := rejectUnknownNonOTELEntries(v, cfg); err != nil {
+		return err
+	}
+
+	if err := bindTags(v, cfg); err != nil {
+		return err
+	}
+
+	if err := v.Unmarshal(cfg); err != nil {
 		return err
 	}
 
@@ -43,6 +48,27 @@ func newWithPaths(cfg any, paths []string) error {
 		return err
 	}
 
+	return nil
+}
+
+func rejectUnknownNonOTELEntries(v *viper.Viper, cfg any) error {
+	knownKeys := map[string]struct{}{}
+	configType := reflect.TypeOf(cfg)
+	if configType.Kind() == reflect.Pointer {
+		configType = configType.Elem()
+	}
+	for field := range configType.Fields() {
+		if key := field.Tag.Get("mapstructure"); key != "" {
+			knownKeys[key] = struct{}{}
+		}
+	}
+
+	for _, key := range v.AllKeys() {
+		if _, ok := knownKeys[key]; ok || strings.HasPrefix(strings.ToUpper(key), "OTEL_") {
+			continue
+		}
+		return fmt.Errorf("unknown config key %q", key)
+	}
 	return nil
 }
 
@@ -65,8 +91,15 @@ func bindTags(v *viper.Viper, iface any) error {
 }
 
 func exportEnv(cfg any) error {
-	for field, value := range reflect.ValueOf(cfg).Elem().Fields() {
+	configValue := reflect.ValueOf(cfg).Elem()
+	for field, value := range configValue.Fields() {
 		name := field.Tag.Get("env")
+		if name == "" {
+			key := field.Tag.Get("mapstructure")
+			if strings.HasPrefix(key, "OTEL_") {
+				name = key
+			}
+		}
 		if name == "" || value.Kind() != reflect.String || value.String() == "" {
 			continue
 		}

@@ -4,8 +4,8 @@ import (
 	"context"
 	"path/filepath"
 	"testing"
-	"time"
 
+	"github.com/crylabsorg/prostack-go/ps_pg"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/require"
 	"github.com/testcontainers/testcontainers-go/modules/postgres"
@@ -27,10 +27,9 @@ func NewPostgresContainer(t *testing.T, schemaPath string) *pgxpool.Pool {
 
 	databaseURL, err := container.ConnectionString(ctx, "sslmode=disable")
 	require.NoError(t, err)
-	db, err := pgxpool.New(ctx, databaseURL)
+	db, disconnect, err := ps_pg.Connect(ctx, databaseURL)
 	require.NoError(t, err)
-	require.Eventually(t, func() bool { return db.Ping(ctx) == nil }, 10*time.Second, 100*time.Millisecond)
 	t.Cleanup(func() { require.NoError(t, container.Terminate(ctx)) })
-	t.Cleanup(func() { db.Close() })
+	t.Cleanup(disconnect)
 	return db
 }

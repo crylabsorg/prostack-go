@@ -87,6 +87,20 @@ func TestNewDoesNotExportEmptyValue(t *testing.T) {
 	}
 }
 
+func TestNewExportsOTELEntries(t *testing.T) {
+	t.Chdir(t.TempDir())
+	writeFile(t, "config.yaml", "OTEL_SERVICE_NAME: test-service\n")
+	t.Setenv("OTEL_SERVICE_NAME", "")
+	require.NoError(t, os.Unsetenv("OTEL_SERVICE_NAME"))
+
+	var cfg struct {
+		ServiceName string `mapstructure:"OTEL_SERVICE_NAME"`
+	}
+	require.NoError(t, New(&cfg))
+	require.Equal(t, "test-service", cfg.ServiceName)
+	require.Equal(t, "test-service", os.Getenv("OTEL_SERVICE_NAME"))
+}
+
 func TestNewReturnsErrorForUnknownField(t *testing.T) {
 	t.Chdir(t.TempDir())
 	writeFile(t, "config.yaml", "host: example.com\nunknown: value\n")
