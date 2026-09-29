@@ -3,6 +3,7 @@ package ps_nats
 import (
 	"context"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/nats-io/nats.go"
@@ -25,7 +26,8 @@ func EnsureStream(ctx context.Context, js jetstream.JetStream, name string, subj
 }
 
 func Publish(ctx context.Context, js jetstream.JetStream, subject, id string, payload []byte) error {
-	ctx, span := otel.Tracer("ps_nats").Start(ctx, "publish "+subject, trace.WithSpanKind(trace.SpanKindProducer))
+	spanName := fmt.Sprintf("publish %s", subject)
+	ctx, span := otel.Tracer("ps_nats").Start(ctx, spanName, trace.WithSpanKind(trace.SpanKindProducer))
 	defer span.End()
 	msg := nats.NewMsg(subject)
 	msg.Data = payload
