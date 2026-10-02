@@ -1,9 +1,8 @@
 package controller
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
+	"encoding/json/v2"
 	"net/http"
 
 	"github.com/crylabsorg/prostack-go/logger"
@@ -22,8 +21,8 @@ func NewController() Controller {
 // delegate to it so that non-Controller code (e.g. internal/access) can
 // write responses without holding a Controller instance.
 func writeJSON(ctx context.Context, w http.ResponseWriter, httpStatus int, data any) {
-	var body bytes.Buffer
-	if err := json.NewEncoder(&body).Encode(data); err != nil {
+	body, err := json.Marshal(data)
+	if err != nil {
 		logger.GetLogger(ctx).Warn("failed to encode response", zap.Error(err))
 		WriteText(ctx, w, http.StatusInternalServerError, "internal server error")
 		return
@@ -31,7 +30,7 @@ func writeJSON(ctx context.Context, w http.ResponseWriter, httpStatus int, data 
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(httpStatus)
-	if _, err := w.Write(body.Bytes()); err != nil {
+	if _, err := w.Write(body); err != nil {
 		logger.GetLogger(ctx).Warn("failed to write response", zap.Error(err))
 	}
 }

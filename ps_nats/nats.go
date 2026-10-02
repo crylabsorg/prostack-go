@@ -7,11 +7,13 @@ import (
 	"sync"
 	"time"
 
+	"github.com/crylabsorg/prostack-go/logger"
 	"github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/trace"
+	"go.uber.org/zap"
 )
 
 func Connect(url string) (*nats.Conn, error) {
@@ -40,6 +42,9 @@ func traceContext(ctx context.Context, msg jetstream.Msg) (context.Context, trac
 }
 
 func Consume(ctx context.Context, consumer jetstream.Consumer, parallelism int, handle func(context.Context, jetstream.Msg) error) error {
+	if parallelism <= 0 {
+		return fmt.Errorf("parallelism must be greater than zero")
+	}
 	slots := make(chan struct{}, parallelism)
 	for range parallelism {
 		slots <- struct{}{}
@@ -55,20 +60,31 @@ func Consume(ctx context.Context, consumer jetstream.Consumer, parallelism int, 
 				slots <- struct{}{}
 			}
 		}
-		batch, err := consumer.Fetch(len(slots), jetstream.FetchMaxWait(time.Second))
+		const maxWait = 5 * time.Second
+		batch, err := consumer.Fetch(len(slots), jetstream.FetchMaxWait(maxWait))
 		if err != nil {
 			return err
 		}
-		for msg := range batch.Messages() {
-			<-slots
-			workers.Go(func() {
-				defer func() { slots <- struct{}{} }()
-				msgCtx, span := traceContext(ctx, msg)
-				defer span.End()
-				if err := handle(msgCtx, msg); err != nil {
-					span.RecordError(err)
+	receive:
+		for {
+			select {
+			case <-ctx.Done():
+				return nil
+			case msg, ok := <-batch.Messages():
+				if !ok {
+					break receive
 				}
-			})
+				<-slots
+				workers.Go(func() {
+					defer func() { slots <- struct{}{} }()
+					msgCtx, span := traceContext(ctx, msg)
+					defer span.End()
+					if err1 := handle(msgCtx, msg); err1 != nil {
+						span.RecordError(err1)
+						logger.GetLogger(msgCtx).Error("failed to handle msg", zap.Error(err1))
+					}
+				})
+			}
 		}
 		if err := batch.Error(); err != nil {
 			return err
