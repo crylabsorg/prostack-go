@@ -22,7 +22,7 @@ import (
 // cancel — pass the cancel of the context that drives ps_http.Run / ps_grpc.Start
 // so listeners stay up until the pod has been deregistered.
 func New(ctx context.Context, cancel context.CancelFunc) context.Context {
-	signalCtx, signalCtxStop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	signalCtx, signalCtxStop := signal.NotifyContext(context.WithoutCancel(ctx), os.Interrupt, syscall.SIGTERM)
 	go runDrain(ctx, cancel, signalCtx, signalCtxStop)
 	return signalCtx
 }

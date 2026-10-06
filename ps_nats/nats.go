@@ -41,7 +41,7 @@ func traceContext(ctx context.Context, msg jetstream.Msg) (context.Context, trac
 	return otel.Tracer("ps_nats").Start(ctx, spanName, trace.WithSpanKind(trace.SpanKindConsumer))
 }
 
-func Consume(ctx context.Context, consumer jetstream.Consumer, parallelism int, handle func(context.Context, jetstream.Msg) error) error {
+func Consume(ctx context.Context, drainingCtx context.Context, consumer jetstream.Consumer, parallelism int, handle func(context.Context, jetstream.Msg) error) error {
 	if parallelism <= 0 {
 		return fmt.Errorf("parallelism must be greater than zero")
 	}
@@ -51,10 +51,19 @@ func Consume(ctx context.Context, consumer jetstream.Consumer, parallelism int, 
 	}
 	var workers sync.WaitGroup
 	defer workers.Wait()
-	for ctx.Err() == nil {
+	for {
+		select {
+		case <-ctx.Done():
+			return nil
+		case <-drainingCtx.Done():
+			return nil
+		default:
+		}
 		if len(slots) == 0 {
 			select {
 			case <-ctx.Done():
+				return nil
+			case <-drainingCtx.Done():
 				return nil
 			case <-slots:
 				slots <- struct{}{}
@@ -69,6 +78,16 @@ func Consume(ctx context.Context, consumer jetstream.Consumer, parallelism int, 
 		for {
 			select {
 			case <-ctx.Done():
+				return nil
+			case <-drainingCtx.Done():
+				return nil
+			default:
+			}
+
+			select {
+			case <-ctx.Done():
+				return nil
+			case <-drainingCtx.Done():
 				return nil
 			case msg, ok := <-batch.Messages():
 				if !ok {
@@ -90,5 +109,4 @@ func Consume(ctx context.Context, consumer jetstream.Consumer, parallelism int, 
 			return err
 		}
 	}
-	return nil
 }

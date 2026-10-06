@@ -41,7 +41,7 @@ type App struct {
 
 // Run owns the common lifecycle. setup registers handlers and probes before
 // either listener starts.
-func Run[C Config](getConfig func() (C, error), setup func(context.Context, C, *App) error) {
+func Run[C Config](getConfig func() (C, error), setup func(context.Context, context.Context, C, *App) error) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -63,6 +63,7 @@ func Run[C Config](getConfig func() (C, error), setup func(context.Context, C, *
 	drainingCtx := ps_shutdown.New(ctx, cancel)
 
 	wg := sync.WaitGroup{}
+	defer wg.Wait()
 	app := &App{}
 	wg.Go(func() {
 		<-drainingCtx.Done()
@@ -92,7 +93,7 @@ func Run[C Config](getConfig func() (C, error), setup func(context.Context, C, *
 	app.metricsRegistry.Register(app.mux)
 	ps_healthcheck.Register(app.mux, app.healthOptions)
 
-	if err := setup(ctx, cfg, app); err != nil {
+	if err := setup(ctx, drainingCtx, cfg, app); err != nil {
 		logger.GetLogger(ctx).Fatal("setup failed", zap.Error(err))
 	}
 
@@ -106,7 +107,6 @@ func Run[C Config](getConfig func() (C, error), setup func(context.Context, C, *
 			ps_grpc.Start(ctx, cfg.GetGRPCListenAddr(), app.grpcSettings.Server)
 		})
 	}
-	wg.Wait()
 }
 
 func (a *App) RegisterCleanup(cleanup func() error) {
