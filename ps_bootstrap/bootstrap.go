@@ -4,7 +4,6 @@ import (
 	"context"
 	"net/http"
 	"sync"
-	"sync/atomic"
 
 	"github.com/crylabsorg/prostack-go/logger"
 	"github.com/crylabsorg/prostack-go/ps_grpc"
@@ -62,7 +61,7 @@ func Run[C Config](getConfig func() (C, error), setup func(context.Context, C, *
 	app.Mux = mux
 	app.Health = &ps_healthcheck.Options{
 		Probes:       make(map[string]ps_healthcheck.Probe),
-		StartupReady: &atomic.Bool{},
+		StartupReady: nil,
 		Draining:     ps_shutdown.New(cancel),
 	}
 	if cfg.GetGRPCListenAddr() != "" {

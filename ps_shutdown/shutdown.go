@@ -18,8 +18,6 @@ import (
 	"github.com/crylabsorg/prostack-go/logger"
 )
 
-const drainDelay = 10 * time.Second
-
 // New installs the SIGTERM/Interrupt handler and returns the draining flag to
 // feed into healthcheck.Options.Draining. On the first signal it sets the flag
 // (so /readyz returns 503 immediately), waits the drain window, then calls
@@ -28,6 +26,7 @@ const drainDelay = 10 * time.Second
 func New(cancel context.CancelFunc) *atomic.Bool {
 	signalCtx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	draining := &atomic.Bool{}
+	const drainDelay = 10 * time.Second
 	go runDrain(signalCtx, stop, cancel, draining, drainDelay)
 	return draining
 }
