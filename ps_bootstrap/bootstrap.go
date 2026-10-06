@@ -62,8 +62,9 @@ func Run[C Config](getConfig func() (C, error), setup func(context.Context, C, *
 
 	drainingCtx := ps_shutdown.New(ctx, cancel)
 
+	wg := sync.WaitGroup{}
 	app := &App{}
-	go func() {
+	wg.Go(func() {
 		<-drainingCtx.Done()
 		logger.GetLogger(ctx).Info("draining")
 		for _, cleanup := range slices.Backward(app.cleanups) {
@@ -71,7 +72,7 @@ func Run[C Config](getConfig func() (C, error), setup func(context.Context, C, *
 				logger.GetLogger(ctx).Error("cleanup failed", zap.Error(err))
 			}
 		}
-	}()
+	})
 	app.mux = mux
 	app.healthOptions = &ps_healthcheck.Options{
 		Probes:       make(map[string]ps_healthcheck.Probe),
@@ -95,7 +96,6 @@ func Run[C Config](getConfig func() (C, error), setup func(context.Context, C, *
 		logger.GetLogger(ctx).Fatal("setup failed", zap.Error(err))
 	}
 
-	wg := sync.WaitGroup{}
 	wg.Go(func() {
 		if err1 := ps_http.Run(ctx, cfg.GetHTTPListenAddr(), app.mux, cfg.GetServiceName()); err1 != nil {
 			logger.GetLogger(ctx).Error("http run errored", zap.Error(err1))
