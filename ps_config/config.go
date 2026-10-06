@@ -59,12 +59,13 @@ func rejectUnknownNonOTELEntries(v *viper.Viper, cfg any) error {
 	}
 	for field := range configType.Fields() {
 		if key := field.Tag.Get("mapstructure"); key != "" {
-			knownKeys[key] = struct{}{}
+			knownKeys[strings.ToUpper(key)] = struct{}{}
 		}
 	}
 
 	for _, key := range v.AllKeys() {
-		if _, ok := knownKeys[key]; ok || strings.HasPrefix(strings.ToUpper(key), "OTEL_") {
+		key = strings.ToUpper(key)
+		if _, ok := knownKeys[key]; ok || strings.HasPrefix(key, "OTEL_") {
 			continue
 		}
 		return fmt.Errorf("unknown config key %q", key)
