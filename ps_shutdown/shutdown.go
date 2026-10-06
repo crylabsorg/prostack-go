@@ -9,13 +9,11 @@ package ps_shutdown
 
 import (
 	"context"
+	"errors"
 	"os"
 	"os/signal"
-	"sync/atomic"
 	"syscall"
 	"time"
-
-	"github.com/crylabsorg/prostack-go/logger"
 )
 
 // New installs the SIGTERM/Interrupt handler and returns the draining flag to
@@ -23,27 +21,30 @@ import (
 // (so /readyz returns 503 immediately), waits the drain window, then calls
 // cancel — pass the cancel of the context that drives ps_http.Run / ps_grpc.Start
 // so listeners stay up until the pod has been deregistered.
-func New(cancel context.CancelFunc) *atomic.Bool {
-	signalCtx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	draining := &atomic.Bool{}
-	const drainDelay = 10 * time.Second
-	go runDrain(signalCtx, stop, cancel, draining, drainDelay)
-	return draining
+func New(ctx context.Context, cancel context.CancelFunc) context.Context {
+	signalCtx, signalCtxStop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	go runDrain(ctx, cancel, signalCtx, signalCtxStop)
+	return signalCtx
 }
 
 func runDrain(
-	signalCtx context.Context,
-	stop context.CancelFunc,
+	ctx context.Context,
 	cancel context.CancelFunc,
-	draining *atomic.Bool,
-	delay time.Duration,
+	signalCtx context.Context,
+	signalCtxStop context.CancelFunc,
 ) {
-	<-signalCtx.Done()
-	stop()
-	log := logger.GetLogger(signalCtx)
-	log.Info("start shutdown, draining readiness")
-	draining.Store(true)
-	time.Sleep(delay)
-	log.Info("drain window elapsed, stopping servers")
-	cancel()
+	select {
+	case <-signalCtx.Done():
+		if errors.Is(ctx.Err(), context.Canceled) {
+			return
+		}
+		const drainDelay = 10 * time.Second
+		time.Sleep(drainDelay)
+		cancel()
+	case <-ctx.Done():
+		if errors.Is(signalCtx.Err(), context.Canceled) {
+			return
+		}
+		signalCtxStop()
+	}
 }

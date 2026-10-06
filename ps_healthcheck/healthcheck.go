@@ -31,7 +31,7 @@ type Probe func(ctx context.Context) error
 type Options struct {
 	Probes       map[string]Probe
 	StartupReady *atomic.Bool
-	Draining     *atomic.Bool
+	DrainingCtx  context.Context
 }
 
 // readyzTimeout caps how long a single readyz fan-out blocks. Long-running
@@ -41,7 +41,7 @@ const readyzTimeout = 3 * time.Second
 type handler struct {
 	probes       map[string]Probe
 	startupReady *atomic.Bool
-	draining     *atomic.Bool
+	drainingCtx  context.Context
 }
 
 // Register installs the standard probes on mux. For deployments without
@@ -51,7 +51,7 @@ func Register(mux *http.ServeMux, opt *Options) {
 	h := &handler{
 		probes:       opt.Probes,
 		startupReady: opt.StartupReady,
-		draining:     opt.Draining,
+		drainingCtx:  opt.DrainingCtx,
 	}
 	mux.HandleFunc("GET /healthz", h.healthz)
 	mux.HandleFunc("GET /readyz", h.readyz)
@@ -71,11 +71,8 @@ func (h *handler) startupz(w http.ResponseWriter, _ *http.Request) {
 }
 
 func (h *handler) readyz(w http.ResponseWriter, r *http.Request) {
-	if h.draining != nil && h.draining.Load() {
-		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	if errors.Is(h.drainingCtx.Err(), context.Canceled) {
 		w.WriteHeader(http.StatusServiceUnavailable)
-		_, err := w.Write([]byte("draining"))
-		logger.GetLogger(r.Context()).Warn("draining write failed", zap.Error(err))
 		return
 	}
 	if len(h.probes) == 0 {

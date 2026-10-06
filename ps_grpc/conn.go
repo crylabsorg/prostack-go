@@ -12,6 +12,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/backoff"
 	"google.golang.org/grpc/credentials/insecure"
+	_ "google.golang.org/grpc/health" // REQUIRED to enable health checks
 	"google.golang.org/grpc/keepalive"
 	"google.golang.org/grpc/test/bufconn"
 )
@@ -75,7 +76,7 @@ func newClientConn(_ context.Context, address string, extra ...grpc.DialOption) 
 	dialOpts = append(dialOpts, extra...)
 
 	if strings.HasPrefix(address, "dns:///") {
-		const serviceConfig = `{"loadBalancingConfig":[{"round_robin":{}}]}`
+		const serviceConfig = `{"loadBalancingConfig":[{"round_robin":{}}],"healthCheckConfig":{"serviceName":""}}`
 		dialOpts = append(dialOpts, grpc.WithDefaultServiceConfig(serviceConfig))
 	}
 
