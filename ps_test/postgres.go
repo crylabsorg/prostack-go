@@ -22,14 +22,15 @@ func NewPostgresContainer(t *testing.T, schemaPath string) *pgxpool.Pool {
 		postgres.WithUsername("postgres"),
 		postgres.WithPassword("postgres"),
 		postgres.WithInitScripts(filepath.Clean(schemaPath)),
+		postgres.BasicWaitStrategies(),
 	)
 	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, container.Terminate(ctx)) })
 
 	databaseURL, err := container.ConnectionString(ctx, "sslmode=disable")
 	require.NoError(t, err)
 	db, disconnect, err := ps_pg.Connect(ctx, databaseURL)
 	require.NoError(t, err)
-	t.Cleanup(func() { require.NoError(t, container.Terminate(ctx)) })
 	t.Cleanup(disconnect)
 	return db
 }
