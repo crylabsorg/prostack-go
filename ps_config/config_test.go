@@ -101,6 +101,58 @@ func TestNewExportsOTELEntries(t *testing.T) {
 	require.Equal(t, "test-service", os.Getenv("OTEL_SERVICE_NAME"))
 }
 
+func TestNewExportsOTELEntriesWithoutStructFields(t *testing.T) {
+	for _, tc := range []struct {
+		name        string
+		localConfig string
+		environment map[string]string
+		serviceName string
+	}{
+		{name: "config", serviceName: "gateway"},
+		{name: "local override", localConfig: "OTEL_SERVICE_NAME: local-gateway\n", serviceName: "local-gateway"},
+		{name: "environment override", environment: map[string]string{"OTEL_SERVICE_NAME": "env-gateway"}, serviceName: "env-gateway"},
+		{name: "empty environment", environment: map[string]string{"OTEL_SERVICE_NAME": ""}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Chdir(t.TempDir())
+			writeFile(t, "config.yaml", `
+OTEL_SERVICE_NAME: gateway
+OTEL_METRICS_EXPORTER: ps_prometheus
+OTEL_TRACES_EXPORTER: otlp
+OTEL_EXPORTER_OTLP_TRACES_PROTOCOL: grpc
+OTEL_EXPORTER_OTLP_TRACES_ENDPOINT: http://localhost:4317
+OTEL_BSP_MAX_QUEUE_SIZE: 2048
+OTEL_SDK_DISABLED: false
+`)
+			if tc.localConfig != "" {
+				writeFile(t, "config.local.yaml", tc.localConfig)
+			}
+			expected := map[string]string{
+				"OTEL_SERVICE_NAME":                  tc.serviceName,
+				"OTEL_METRICS_EXPORTER":              "ps_prometheus",
+				"OTEL_TRACES_EXPORTER":               "otlp",
+				"OTEL_EXPORTER_OTLP_TRACES_PROTOCOL": "grpc",
+				"OTEL_EXPORTER_OTLP_TRACES_ENDPOINT": "http://localhost:4317",
+				"OTEL_BSP_MAX_QUEUE_SIZE":            "2048",
+				"OTEL_SDK_DISABLED":                  "false",
+			}
+			for name := range expected {
+				t.Setenv(name, "")
+				require.NoError(t, os.Unsetenv(name))
+			}
+			for name, value := range tc.environment {
+				t.Setenv(name, value)
+			}
+
+			var cfg optionalConfig
+			require.NoError(t, New(&cfg))
+			for name, value := range expected {
+				require.Equal(t, value, os.Getenv(name), name)
+			}
+		})
+	}
+}
+
 func TestNewReturnsErrorForUnknownField(t *testing.T) {
 	t.Chdir(t.TempDir())
 	writeFile(t, "config.yaml", "host: example.com\nunknown: value\n")

@@ -44,7 +44,7 @@ func newWithPaths(cfg any, paths []string) error {
 		return err
 	}
 
-	if err := exportEnv(cfg); err != nil {
+	if err := exportEnv(v, cfg); err != nil {
 		return err
 	}
 
@@ -91,7 +91,7 @@ func bindTags(v *viper.Viper, iface any) error {
 	return nil
 }
 
-func exportEnv(cfg any) error {
+func exportEnv(v *viper.Viper, cfg any) error {
 	configValue := reflect.ValueOf(cfg).Elem()
 	for field, value := range configValue.Fields() {
 		name := field.Tag.Get("env")
@@ -108,6 +108,22 @@ func exportEnv(cfg any) error {
 			continue
 		}
 		if err := os.Setenv(name, value.String()); err != nil {
+			return fmt.Errorf("set %s: %w", name, err)
+		}
+	}
+	for _, key := range v.AllKeys() {
+		name := strings.ToUpper(key)
+		if !strings.HasPrefix(name, "OTEL_") {
+			continue
+		}
+		if _, exists := os.LookupEnv(name); exists {
+			continue
+		}
+		value := v.GetString(key)
+		if value == "" {
+			continue
+		}
+		if err := os.Setenv(name, value); err != nil {
 			return fmt.Errorf("set %s: %w", name, err)
 		}
 	}
