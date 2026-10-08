@@ -35,78 +35,80 @@ func EnsureStream(ctx context.Context, js jetstream.JetStream, name string, subj
 	return nil
 }
 
-func traceContext(ctx context.Context, msg jetstream.Msg) (context.Context, trace.Span) {
-	ctx = otel.GetTextMapPropagator().Extract(ctx, propagation.HeaderCarrier(msg.Headers()))
-	spanName := fmt.Sprintf("process %s", msg.Subject())
-	return otel.Tracer("ps_nats").Start(ctx, spanName, trace.WithSpanKind(trace.SpanKindConsumer))
+func RunConsumer(
+	ctx context.Context,
+	drainingCtx context.Context,
+	jsConsumer jetstream.Consumer,
+	parallelism int,
+	handle func(context.Context, jetstream.Msg) error,
+) error {
+	consumer, err := newConsumer(jsConsumer, parallelism, handle)
+	if err != nil {
+		return err
+	}
+	return consumer.run(ctx, drainingCtx)
 }
 
-func Consume(ctx context.Context, drainingCtx context.Context, consumer jetstream.Consumer, parallelism int, handle func(context.Context, jetstream.Msg) error) error {
+type consumer struct {
+	consumer jetstream.Consumer
+	handle   func(context.Context, jetstream.Msg) error
+	slots    chan struct{}
+	workers  sync.WaitGroup
+}
+
+func newConsumer(jsConsumer jetstream.Consumer, parallelism int, handle func(context.Context, jetstream.Msg) error) (*consumer, error) {
 	if parallelism <= 0 {
-		return fmt.Errorf("parallelism must be greater than zero")
+		return nil, fmt.Errorf("parallelism must be greater than zero")
 	}
 	slots := make(chan struct{}, parallelism)
 	for range parallelism {
 		slots <- struct{}{}
 	}
-	var workers sync.WaitGroup
-	defer workers.Wait()
+	return &consumer{consumer: jsConsumer, handle: handle, slots: slots}, nil
+}
+
+func (c *consumer) traceContext(ctx context.Context, msg jetstream.Msg) (context.Context, trace.Span) {
+	ctx = otel.GetTextMapPropagator().Extract(ctx, propagation.HeaderCarrier(msg.Headers()))
+	spanName := fmt.Sprintf("process %s", msg.Subject())
+	return otel.Tracer("ps_nats").Start(ctx, spanName, trace.WithSpanKind(trace.SpanKindConsumer))
+}
+
+func (c *consumer) run(ctx context.Context, drainingCtx context.Context) error {
+	msgs, err := c.consumer.Messages(jetstream.PullMaxMessages(cap(c.slots)))
+	if err != nil {
+		return err
+	}
+	defer c.workers.Wait()
+	defer msgs.Stop()
+
+	readCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	stopDrain := context.AfterFunc(drainingCtx, cancel)
+	defer stopDrain()
+
 	for {
 		select {
 		case <-ctx.Done():
 			return nil
 		case <-drainingCtx.Done():
 			return nil
-		default:
+		case <-c.slots:
 		}
-		if len(slots) == 0 {
-			select {
-			case <-ctx.Done():
-				return nil
-			case <-drainingCtx.Done():
-				return nil
-			case <-slots:
-				slots <- struct{}{}
-			}
-		}
-		const maxWait = 5 * time.Second
-		batch, err := consumer.Fetch(len(slots), jetstream.FetchMaxWait(maxWait))
+		msg, err := msgs.Next(jetstream.NextContext(readCtx))
 		if err != nil {
+			if errors.Is(err, jetstream.ErrMsgIteratorClosed) || errors.Is(readCtx.Err(), context.Canceled) {
+				return nil
+			}
 			return err
 		}
-	receive:
-		for {
-			select {
-			case <-ctx.Done():
-				return nil
-			case <-drainingCtx.Done():
-				return nil
-			default:
+		c.workers.Go(func() {
+			defer func() { c.slots <- struct{}{} }()
+			msgCtx, span := c.traceContext(ctx, msg)
+			defer span.End()
+			if err1 := c.handle(msgCtx, msg); err1 != nil {
+				span.RecordError(err1)
+				logger.GetLogger(msgCtx).Error("failed to handle msg", zap.Error(err1))
 			}
-
-			select {
-			case <-ctx.Done():
-				return nil
-			case <-drainingCtx.Done():
-				return nil
-			case msg, ok := <-batch.Messages():
-				if !ok {
-					break receive
-				}
-				<-slots
-				workers.Go(func() {
-					defer func() { slots <- struct{}{} }()
-					msgCtx, span := traceContext(ctx, msg)
-					defer span.End()
-					if err1 := handle(msgCtx, msg); err1 != nil {
-						span.RecordError(err1)
-						logger.GetLogger(msgCtx).Error("failed to handle msg", zap.Error(err1))
-					}
-				})
-			}
-		}
-		if err := batch.Error(); err != nil {
-			return err
-		}
+		})
 	}
 }
