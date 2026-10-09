@@ -119,10 +119,10 @@ func (op *outboxPublisher) publishMessages(ctx context.Context, messages []Outbo
 				<-semaphore
 			}()
 			sourceCtx := propagation.TraceContext{}.Extract(context.Background(), propagation.MapCarrier(message.TraceContext()))
-			sourceSpan := trace.SpanContextFromContext(sourceCtx)
+			sourceSpanContext := trace.SpanContextFromContext(sourceCtx)
 			options := []trace.SpanStartOption{trace.WithSpanKind(trace.SpanKindProducer)}
-			if sourceSpan.IsValid() {
-				options = append(options, trace.WithLinks(trace.Link{SpanContext: sourceSpan}))
+			if sourceSpanContext.IsValid() {
+				options = append(options, trace.WithLinks(trace.Link{SpanContext: sourceSpanContext}))
 			}
 			spanCtx, span := otel.Tracer("ps_nats").Start(ctx, fmt.Sprintf("publish %s", message.Subject()), options...)
 			defer span.End()
