@@ -15,18 +15,25 @@ import (
 	"go.uber.org/zap"
 )
 
-// Outbox returns up to limit messages reserved for publishing.
-// CompleteBatch may receive only the messages acknowledged by JetStream;
-// the remaining messages stay in the outbox when the transaction commits.
+// Outbox reserves messages while publish runs and marks only acknowledged messages as processed.
+// ProcessOutboxBatch reports storage failures.
+// publish must return one result per input message, containing that original message.
 type Outbox interface {
-	NextBatch(context.Context) ([]OutboxMessage, error)
-	Complete(context.Context, []OutboxMessage, []OutboxMessage, []error) error
+	ProcessOutboxBatch(ctx context.Context, publish func([]OutboxMessage) []OutboxMessagePublishResult) error
 }
 
 type OutboxMessage interface {
 	Subject() string
 	ID() string
 	Payload() []byte
+}
+
+// OutboxMessagePublishResult contains the original message and its publication error.
+// OutboxMessage must be non-nil. A nil Err means JetStream acknowledged the message,
+// independently of whether the outbox record was successfully marked as processed.
+type OutboxMessagePublishResult struct {
+	OutboxMessage
+	Err error
 }
 
 type outboxPublisher struct {
@@ -60,57 +67,50 @@ func (op *outboxPublisher) run(ctx context.Context, drainingCtx context.Context)
 		}
 
 		if err := op.publishBatch(ctx); err != nil {
-			logger.GetLogger(ctx).Error("publish outbox", zap.Error(err))
+			logger.GetLogger(ctx).Error("process outbox batch", zap.Error(err))
 		}
 	}
 }
 
 // publishBatch publishes and completes one reserved batch.
 func (op *outboxPublisher) publishBatch(ctx context.Context) error {
-	messages, err := op.outbox.NextBatch(ctx)
-	if err != nil {
-		return err
-	}
-	if len(messages) == 0 {
-		return nil
-	}
-	succeeded := make([]OutboxMessage, 0, len(messages))
-	var failed []OutboxMessage
-	var failedErrors []error
-	for i, publishErr := range op.publishMessages(ctx, messages) {
-		if publishErr == nil {
-			succeeded = append(succeeded, messages[i])
-		} else {
-			failed = append(failed, messages[i])
-			failedErrors = append(failedErrors, publishErr)
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	return op.outbox.ProcessOutboxBatch(ctx, func(messages []OutboxMessage) []OutboxMessagePublishResult {
+		results := op.publishMessages(ctx, messages)
+		for _, result := range results {
+			if result.Err != nil {
+				logger.GetLogger(ctx).Error("publish outbox message", zap.String("id", result.ID()), zap.String("subject", result.Subject()), zap.Error(result.Err))
+			}
 		}
-	}
-	return op.outbox.Complete(ctx, succeeded, failed, failedErrors)
+		return results
+	})
 }
 
-// publishMessages returns one result per message, in input order. A nil result
-// means JetStream acknowledged that message; the batch is not atomic.
-func (op *outboxPublisher) publishMessages(ctx context.Context, messages []OutboxMessage) []error {
+// publishMessages returns one result per message, in input order.
+// The batch is not atomic: each message is acknowledged independently.
+func (op *outboxPublisher) publishMessages(ctx context.Context, messages []OutboxMessage) []OutboxMessagePublishResult {
 	if len(messages) == 0 {
 		return nil
 	}
 	ctx, batchSpan := otel.Tracer("ps_nats").Start(ctx, "publish batch", trace.WithSpanKind(trace.SpanKindProducer))
 	defer batchSpan.End()
 	const maxConcurrentPublishes = 100
-	results := make([]error, len(messages))
+	results := make([]OutboxMessagePublishResult, len(messages))
 	semaphore := make(chan struct{}, maxConcurrentPublishes)
 	workers := sync.WaitGroup{}
 	for i, message := range messages {
+		results[i].OutboxMessage = message
 		select {
 		case <-ctx.Done():
-			results[i] = fmt.Errorf("publish %s: %w", message.ID(), ctx.Err())
+			results[i].Err = fmt.Errorf("publish %s: %w", message.ID(), ctx.Err())
 			continue
 		default:
 		}
 		select {
 		case semaphore <- struct{}{}:
 		case <-ctx.Done():
-			results[i] = fmt.Errorf("publish %s: %w", message.ID(), ctx.Err())
+			results[i].Err = fmt.Errorf("publish %s: %w", message.ID(), ctx.Err())
 			continue
 		}
 		workers.Go(func() {
@@ -126,7 +126,7 @@ func (op *outboxPublisher) publishMessages(ctx context.Context, messages []Outbo
 			_, err := op.js.PublishMsg(spanCtx, msg)
 			if err != nil {
 				span.RecordError(err)
-				results[i] = fmt.Errorf("publish %s: %w", message.ID(), err)
+				results[i].Err = fmt.Errorf("publish %s: %w", message.ID(), err)
 			}
 		})
 	}
