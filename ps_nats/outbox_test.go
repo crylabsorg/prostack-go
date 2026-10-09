@@ -20,6 +20,8 @@ func (m testOutboxMessage) ID() string      { return m.id }
 func (m testOutboxMessage) Subject() string { return "test.created" }
 func (m testOutboxMessage) Payload() []byte { return []byte(`{"created":true}`) }
 
+func (m testOutboxMessage) TraceContext() map[string]string { return nil }
+
 type testOutbox struct {
 	messages    []OutboxMessage
 	results     []OutboxMessagePublishResult

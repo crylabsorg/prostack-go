@@ -69,8 +69,13 @@ func newConsumer(jsConsumer jetstream.Consumer, parallelism int, handle func(con
 
 func (c *consumer) traceContext(ctx context.Context, msg jetstream.Msg) (context.Context, trace.Span) {
 	ctx = otel.GetTextMapPropagator().Extract(ctx, propagation.HeaderCarrier(msg.Headers()))
+	publisherContext := trace.SpanContextFromContext(ctx)
+	options := []trace.SpanStartOption{trace.WithNewRoot(), trace.WithSpanKind(trace.SpanKindConsumer)}
+	if publisherContext.IsValid() {
+		options = append(options, trace.WithLinks(trace.Link{SpanContext: publisherContext}))
+	}
 	spanName := fmt.Sprintf("process %s", msg.Subject())
-	return otel.Tracer("ps_nats").Start(ctx, spanName, trace.WithSpanKind(trace.SpanKindConsumer))
+	return otel.Tracer("ps_nats").Start(ctx, spanName, options...)
 }
 
 func (c *consumer) run(ctx context.Context, drainingCtx context.Context) error {

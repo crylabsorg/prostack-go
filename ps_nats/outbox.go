@@ -26,6 +26,7 @@ type OutboxMessage interface {
 	Subject() string
 	ID() string
 	Payload() []byte
+	TraceContext() map[string]string
 }
 
 // OutboxMessagePublishResult contains the original message and its publication error.
@@ -117,7 +118,13 @@ func (op *outboxPublisher) publishMessages(ctx context.Context, messages []Outbo
 			defer func() {
 				<-semaphore
 			}()
-			spanCtx, span := otel.Tracer("ps_nats").Start(ctx, fmt.Sprintf("publish %s", message.Subject()), trace.WithSpanKind(trace.SpanKindProducer))
+			sourceCtx := propagation.TraceContext{}.Extract(context.Background(), propagation.MapCarrier(message.TraceContext()))
+			sourceSpan := trace.SpanContextFromContext(sourceCtx)
+			options := []trace.SpanStartOption{trace.WithSpanKind(trace.SpanKindProducer)}
+			if sourceSpan.IsValid() {
+				options = append(options, trace.WithLinks(trace.Link{SpanContext: sourceSpan}))
+			}
+			spanCtx, span := otel.Tracer("ps_nats").Start(ctx, fmt.Sprintf("publish %s", message.Subject()), options...)
 			defer span.End()
 			msg := nats.NewMsg(message.Subject())
 			msg.Data = message.Payload()
