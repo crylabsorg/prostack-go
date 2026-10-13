@@ -1,10 +1,13 @@
 GOLANGCI_LINT_VERSION := v2.14.0
 
 ## Lint:
+lint-tools: SHELL := /bin/bash
 .PHONY: lint-tools
 lint-tools: ## Install pinned golangci-lint into bin/
-	@install_script="$$(curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/$(GOLANGCI_LINT_VERSION)/install.sh)" && \
-		printf '%s\n' "$$install_script" | sh -s -- -b "$(ROOT_DIR)/bin" "$(GOLANGCI_LINT_VERSION)"
+	@echo "Installing golangci-lint $(GOLANGCI_LINT_VERSION)..."
+	@set -o pipefail; \
+		curl -sSfL "https://raw.githubusercontent.com/golangci/golangci-lint/$(GOLANGCI_LINT_VERSION)/install.sh" | \
+		sh -s -- -b "$(ROOT_DIR)/bin" "$(GOLANGCI_LINT_VERSION)"
 
 .PHONY: lint
 lint: lint-tools ## Lint selected Go modules
