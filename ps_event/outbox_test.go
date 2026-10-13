@@ -1,4 +1,4 @@
-package ps_nats
+package ps_event
 
 import (
 	"context"
@@ -7,8 +7,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nats-io/nats.go"
-	"github.com/nats-io/nats.go/jetstream"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zaptest/observer"
@@ -35,13 +33,10 @@ func (o *testOutbox) ProcessOutboxBatch(ctx context.Context, publish func([]Outb
 	return o.completeErr
 }
 
-type testJetStream struct {
-	jetstream.JetStream
-	publish func(context.Context, *nats.Msg) (*jetstream.PubAck, error)
-}
+type testPublisher func(context.Context, OutboxMessage) error
 
-func (js *testJetStream) PublishMsg(ctx context.Context, msg *nats.Msg, _ ...jetstream.PublishOpt) (*jetstream.PubAck, error) {
-	return js.publish(ctx, msg)
+func (publish testPublisher) Publish(ctx context.Context, message OutboxMessage) error {
+	return publish(ctx, message)
 }
 
 func TestPublishBatchPartialSuccess(t *testing.T) {
@@ -51,13 +46,13 @@ func TestPublishBatchPartialSuccess(t *testing.T) {
 	publishErr := errors.New("NATS rejected message")
 	completeErr := errors.New("commit failed")
 	outbox := &testOutbox{messages: []OutboxMessage{testOutboxMessage{"success"}, testOutboxMessage{"failure"}}, completeErr: completeErr}
-	js := &testJetStream{publish: func(ctx context.Context, msg *nats.Msg) (*jetstream.PubAck, error) {
-		if msg.Header.Get(nats.MsgIdHdr) == "failure" {
-			return nil, publishErr
+	publisher := testPublisher(func(ctx context.Context, msg OutboxMessage) error {
+		if msg.ID() == "failure" {
+			return publishErr
 		}
-		return &jetstream.PubAck{}, nil
-	}}
-	err := (&outboxPublisher{js: js, outbox: outbox}).publishBatch(context.Background())
+		return nil
+	})
+	err := (&outboxPublisher{publisher: publisher, outbox: outbox}).publishBatch(context.Background())
 	results := outbox.results
 	require.ErrorIs(t, err, completeErr)
 	require.NotErrorIs(t, err, publishErr)
@@ -94,20 +89,20 @@ func TestPublisherWaitsForInFlightBatchOnDrain(t *testing.T) {
 	closeRelease := func() { releaseOnce.Do(func() { close(release) }) }
 	defer closeRelease()
 	outbox := &testOutbox{messages: []OutboxMessage{testOutboxMessage{"in-flight"}}}
-	js := &testJetStream{publish: func(ctx context.Context, msg *nats.Msg) (*jetstream.PubAck, error) {
+	publisher := testPublisher(func(ctx context.Context, msg OutboxMessage) error {
 		close(started)
 		select {
 		case <-release:
-			return &jetstream.PubAck{}, nil
+			return nil
 		case <-ctx.Done():
-			return nil, ctx.Err()
+			return ctx.Err()
 		}
-	}}
-	publisher := outboxPublisher{js: js, outbox: outbox, ticker: time.NewTicker(time.Second)}
+	})
+	outboxWorker := outboxPublisher{publisher: publisher, outbox: outbox, ticker: time.NewTicker(time.Second)}
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		publisher.run(ctx, drainingCtx)
+		outboxWorker.run(ctx, drainingCtx)
 	}()
 	select {
 	case <-started:

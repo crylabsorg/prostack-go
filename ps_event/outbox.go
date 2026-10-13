@@ -1,4 +1,4 @@
-package ps_nats
+package ps_event
 
 import (
 	"context"
@@ -7,9 +7,8 @@ import (
 	"time"
 
 	"github.com/crylabsorg/prostack-go/logger"
-	"github.com/nats-io/nats.go"
-	"github.com/nats-io/nats.go/jetstream"
 	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap"
@@ -30,7 +29,7 @@ type OutboxMessage interface {
 }
 
 // OutboxMessagePublishResult contains the original message and its publication error.
-// OutboxMessage must be non-nil. A nil Err means JetStream acknowledged the message,
+// OutboxMessage must be non-nil. A nil Err means the publisher acknowledged the message,
 // independently of whether the outbox record was successfully marked as processed.
 type OutboxMessagePublishResult struct {
 	OutboxMessage
@@ -38,14 +37,19 @@ type OutboxMessagePublishResult struct {
 }
 
 type outboxPublisher struct {
-	js     jetstream.JetStream
-	outbox Outbox
-	ticker *time.Ticker
+	publisher Publisher
+	outbox    Outbox
+	ticker    *time.Ticker
 }
 
-func RunOutboxPublisher(ctx context.Context, drainingCtx context.Context, js jetstream.JetStream, outbox Outbox) {
-	op := outboxPublisher{js: js, outbox: outbox, ticker: time.NewTicker(time.Second)}
-	go op.run(ctx, drainingCtx)
+func RunOutboxPublisher(ctx context.Context, drainingCtx context.Context, publisher Publisher, outbox Outbox) <-chan struct{} {
+	op := outboxPublisher{publisher: publisher, outbox: outbox, ticker: time.NewTicker(time.Second)}
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		op.run(ctx, drainingCtx)
+	}()
+	return done
 }
 
 func (op *outboxPublisher) run(ctx context.Context, drainingCtx context.Context) {
@@ -94,7 +98,7 @@ func (op *outboxPublisher) publishMessages(ctx context.Context, messages []Outbo
 	if len(messages) == 0 {
 		return nil
 	}
-	ctx, batchSpan := otel.Tracer("ps_nats").Start(ctx, "publish batch", trace.WithSpanKind(trace.SpanKindProducer))
+	ctx, batchSpan := otel.Tracer("ps_event").Start(ctx, "publish batch", trace.WithSpanKind(trace.SpanKindProducer))
 	defer batchSpan.End()
 	const maxConcurrentPublishes = 100
 	results := make([]OutboxMessagePublishResult, len(messages))
@@ -124,15 +128,12 @@ func (op *outboxPublisher) publishMessages(ctx context.Context, messages []Outbo
 			if sourceSpanContext.IsValid() {
 				options = append(options, trace.WithLinks(trace.Link{SpanContext: sourceSpanContext}))
 			}
-			spanCtx, span := otel.Tracer("ps_nats").Start(ctx, fmt.Sprintf("publish %s", message.Subject()), options...)
+			spanCtx, span := otel.Tracer("ps_event").Start(ctx, fmt.Sprintf("publish %s", message.Subject()), options...)
 			defer span.End()
-			msg := nats.NewMsg(message.Subject())
-			msg.Data = message.Payload()
-			msg.Header.Set(nats.MsgIdHdr, message.ID())
-			otel.GetTextMapPropagator().Inject(spanCtx, propagation.HeaderCarrier(msg.Header))
-			_, err := op.js.PublishMsg(spanCtx, msg)
+			err := op.publisher.Publish(spanCtx, message)
 			if err != nil {
 				span.RecordError(err)
+				span.SetStatus(codes.Error, err.Error())
 				results[i].Err = fmt.Errorf("publish %s: %w", message.ID(), err)
 			}
 		})
