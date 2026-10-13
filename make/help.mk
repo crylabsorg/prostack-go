@@ -26,6 +26,8 @@ help: ## Show available commands
 			printf '    \033[34m%-20s\033[0m %s\n' "build-$$app" "Build $$app"; \
 			printf '    \033[34m%-20s\033[0m %s\n' "run-$$app" "Run $$app"; \
 			printf '    \033[34m%-20s\033[0m %s\n' "test-$$app" "Test $$app"; \
+			printf '    \033[34m%-20s\033[0m %s\n' "lint-$$app" "Lint $$app"; \
+			printf '    \033[34m%-20s\033[0m %s\n' "lint-fix-$$app" "Lint and fix $$app"; \
 		done; \
 	fi
 	@if [ -n "$(strip $(MIGRATION_APP_NAMES))" ]; then \

@@ -11,4 +11,5 @@ test: ## Run library tests
 MODULE_DIRS := $(ROOT_DIR)
 
 include $(ROOT_DIR)/make/modules.mk
+include $(ROOT_DIR)/make/lint.mk
 include $(ROOT_DIR)/make/help.mk
