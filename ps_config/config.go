@@ -1,4 +1,4 @@
-package ps_config
+package ps_config //nolint:staticcheck // Preserve the public package name for import compatibility.
 
 import (
 	"errors"
@@ -101,14 +101,11 @@ func exportEnv(v *viper.Viper, cfg any) error {
 				name = key
 			}
 		}
-		if name == "" || value.Kind() != reflect.String || value.String() == "" {
+		if value.Kind() != reflect.String {
 			continue
 		}
-		if _, exists := os.LookupEnv(name); exists {
-			continue
-		}
-		if err := os.Setenv(name, value.String()); err != nil {
-			return fmt.Errorf("set %s: %w", name, err)
+		if err := exportEnvValue(name, value.String()); err != nil {
+			return err
 		}
 	}
 	for _, key := range v.AllKeys() {
@@ -116,16 +113,22 @@ func exportEnv(v *viper.Viper, cfg any) error {
 		if !strings.HasPrefix(name, "OTEL_") {
 			continue
 		}
-		if _, exists := os.LookupEnv(name); exists {
-			continue
+		if err := exportEnvValue(name, v.GetString(key)); err != nil {
+			return err
 		}
-		value := v.GetString(key)
-		if value == "" {
-			continue
-		}
-		if err := os.Setenv(name, value); err != nil {
-			return fmt.Errorf("set %s: %w", name, err)
-		}
+	}
+	return nil
+}
+
+func exportEnvValue(name, value string) error {
+	if name == "" || value == "" {
+		return nil
+	}
+	if _, exists := os.LookupEnv(name); exists {
+		return nil
+	}
+	if err := os.Setenv(name, value); err != nil {
+		return fmt.Errorf("set %s: %w", name, err)
 	}
 	return nil
 }

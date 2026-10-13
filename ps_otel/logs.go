@@ -1,14 +1,15 @@
-package ps_otel
+package ps_otel //nolint:staticcheck // Preserve the public package name for import compatibility.
 
 import (
 	"context"
 	"time"
 
-	"github.com/crylabsorg/prostack-go/logger"
 	"go.opentelemetry.io/contrib/exporters/autoexport"
 	"go.opentelemetry.io/otel/log/global"
 	"go.opentelemetry.io/otel/sdk/log"
 	"go.uber.org/zap"
+
+	"github.com/crylabsorg/prostack-go/logger"
 )
 
 func InitLogs(ctx context.Context) func() {
@@ -26,10 +27,10 @@ func InitLogs(ctx context.Context) func() {
 		shutdownCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), timeout)
 		defer cancel()
 
-		if err := lp.Shutdown(shutdownCtx); err != nil {
+		if shutdownErr := lp.Shutdown(shutdownCtx); shutdownErr != nil {
 			logger.GetLogger(context.Background()).Error(
 				"failed to shutdown logs provider",
-				zap.Error(err),
+				zap.Error(shutdownErr),
 			)
 		}
 	}

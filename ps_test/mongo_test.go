@@ -27,6 +27,7 @@ func TestMain(m *testing.M) {
 }
 
 func TestIntegration_StartMongoEnv(t *testing.T) {
+	t.Parallel()
 	mongoContainer1 := NewMongoContainer(t)
 	client := mongoContainer1.DB.Client()
 	ctx := context.Background()

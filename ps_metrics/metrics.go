@@ -1,4 +1,4 @@
-package ps_metrics
+package ps_metrics //nolint:staticcheck // Preserve the public package name for import compatibility.
 
 import (
 	"net/http"

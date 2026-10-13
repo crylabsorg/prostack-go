@@ -1,4 +1,4 @@
-package ps_event
+package ps_event //nolint:staticcheck // Preserve the public package name for import compatibility.
 
 import (
 	"context"
@@ -14,11 +14,13 @@ import (
 
 type linkedOutboxMessage struct {
 	testOutboxMessage
+
 	carrier map[string]string
 }
 
 func (m linkedOutboxMessage) TraceContext() map[string]string { return m.carrier }
 
+//nolint:paralleltest // The test temporarily replaces OpenTelemetry globals.
 func TestOutboxPublicationLinksEachRequest(t *testing.T) {
 	recorder := tracetest.NewSpanRecorder()
 	provider := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(recorder))
@@ -42,7 +44,7 @@ func TestOutboxPublicationLinksEachRequest(t *testing.T) {
 		messages = append(messages, linkedOutboxMessage{testOutboxMessage{id}, carrier})
 	}
 	messages = append(messages, testOutboxMessage{"legacy"})
-	publisher := testPublisher(func(ctx context.Context, msg OutboxMessage) error {
+	publisher := testPublisher(func(ctx context.Context, _ OutboxMessage) error {
 		headers := propagation.MapCarrier{}
 		otel.GetTextMapPropagator().Inject(ctx, headers)
 		extracted := propagation.TraceContext{}.Extract(context.Background(), headers)

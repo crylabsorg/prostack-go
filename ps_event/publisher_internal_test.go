@@ -1,4 +1,4 @@
-package ps_event
+package ps_event //nolint:staticcheck // Preserve the public package name for import compatibility.
 
 import (
 	"context"
@@ -9,12 +9,13 @@ import (
 )
 
 func TestFanoutAcknowledgesOnlyWhenAllPublishersSucceed(t *testing.T) {
+	t.Parallel()
 	firstErr, secondErr := errors.New("nats failed"), errors.New("kafka failed")
 	for _, failures := range [][]error{{nil, nil}, {firstErr, nil}, {nil, secondErr}, {firstErr, secondErr}} {
 		calls := 0
 		publishers := Fanout{}
 		for _, failure := range failures {
-			publishers = append(publishers, testPublisher(func(ctx context.Context, message OutboxMessage) error {
+			publishers = append(publishers, testPublisher(func(_ context.Context, message OutboxMessage) error {
 				calls++
 				require.Equal(t, "event-id", message.ID())
 				return failure

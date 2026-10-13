@@ -1,8 +1,8 @@
-// Package healthcheck exposes the standard k8s probes (/healthz, /readyz,
+// Package ps_healthcheck exposes the standard k8s probes (/healthz, /readyz,
 // /startupz) on an HTTP mux. /healthz is liveness — always 200 while the
 // process is up. /readyz runs caller-supplied probes (Mongo / Redis pings)
 // and returns 503 if any probe fails; this is what k8s should be wired to.
-package ps_healthcheck
+package ps_healthcheck //nolint:staticcheck // Preserve the public package name for import compatibility.
 
 import (
 	"context"

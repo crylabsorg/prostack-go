@@ -1,10 +1,15 @@
-package ps_bootstrap
+package ps_bootstrap //nolint:staticcheck // Preserve the public package name for import compatibility.
 
 import (
 	"context"
 	"net/http"
 	"slices"
 	"sync"
+
+	"github.com/prometheus/client_golang/prometheus"
+	"go.uber.org/zap"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/health"
 
 	"github.com/crylabsorg/prostack-go/logger"
 	"github.com/crylabsorg/prostack-go/ps_grpc"
@@ -13,10 +18,6 @@ import (
 	"github.com/crylabsorg/prostack-go/ps_metrics"
 	"github.com/crylabsorg/prostack-go/ps_otel"
 	"github.com/crylabsorg/prostack-go/ps_shutdown"
-	"github.com/prometheus/client_golang/prometheus"
-	"go.uber.org/zap"
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/health"
 )
 
 type Config interface {
@@ -35,7 +36,6 @@ type App struct {
 	healthOptions   *ps_healthcheck.Options
 	grpcSettings    *GRPCSettings
 	metricsRegistry ps_metrics.Registry
-	drainingCtx     context.Context
 	cleanups        []func() error
 }
 

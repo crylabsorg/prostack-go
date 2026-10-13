@@ -1,4 +1,4 @@
-package ps_nats
+package ps_nats_test
 
 // import (
 // 	"context"

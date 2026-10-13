@@ -5,10 +5,11 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/crylabsorg/prostack-go/ps_pg"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/require"
 	"github.com/testcontainers/testcontainers-go/modules/postgres"
+
+	"github.com/crylabsorg/prostack-go/ps_pg"
 )
 
 const postgresImage = "postgres:18.6-alpine3.24"

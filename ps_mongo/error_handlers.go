@@ -1,4 +1,4 @@
-package ps_mongo
+package ps_mongo //nolint:staticcheck // Preserve the public package name for import compatibility.
 
 import (
 	"errors"

@@ -1,4 +1,4 @@
-package ps_grpc
+package ps_grpc_test
 
 import (
 	"context"
@@ -7,14 +7,19 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/crylabsorg/prostack-go/controller"
 	"github.com/stretchr/testify/require"
+
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+
+	"github.com/crylabsorg/prostack-go/ps_grpc"
+
+	"github.com/crylabsorg/prostack-go/controller"
 )
 
 func TestErrorInterceptorHidesUnexpectedError(t *testing.T) {
-	_, err := ErrorInterceptor(context.Background(), nil, nil, func(context.Context, any) (any, error) {
+	t.Parallel()
+	_, err := ps_grpc.ErrorInterceptor(context.Background(), nil, nil, func(context.Context, any) (any, error) {
 		return nil, errors.New("database connection failed")
 	})
 	require.Equal(t, codes.Internal, status.Code(err))

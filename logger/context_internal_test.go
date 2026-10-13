@@ -18,6 +18,7 @@ import (
 
 type captureProvider struct {
 	embedded.LoggerProvider
+
 	logger *captureLogger
 }
 
@@ -25,6 +26,7 @@ func (p captureProvider) Logger(string, ...log.LoggerOption) log.Logger { return
 
 type captureLogger struct {
 	embedded.Logger
+
 	ctx    context.Context
 	record log.Record
 }
@@ -36,11 +38,21 @@ func (l *captureLogger) Emit(ctx context.Context, record log.Record) {
 	l.record = record
 }
 
+//nolint:paralleltest // The test temporarily replaces the process-wide zap logger.
 func TestGetLoggerRoutesTraceContext(t *testing.T) {
 	var stdout bytes.Buffer
-	stdoutCore := zapcore.NewCore(zapcore.NewJSONEncoder(zap.NewProductionEncoderConfig()), zapcore.AddSync(&stdout), zapcore.DebugLevel)
+	stdoutCore := zapcore.NewCore(
+		zapcore.NewJSONEncoder(zap.NewProductionEncoderConfig()),
+		zapcore.AddSync(&stdout),
+		zapcore.DebugLevel,
+	)
 	otelLogger := &captureLogger{}
-	log := zap.New(zapcore.NewTee(traceCore{stdoutCore}, otelzap.NewCore("test", otelzap.WithLoggerProvider(captureProvider{logger: otelLogger}))))
+	log := zap.New(
+		zapcore.NewTee(
+			traceCore{stdoutCore},
+			otelzap.NewCore("test", otelzap.WithLoggerProvider(captureProvider{logger: otelLogger})),
+		),
+	)
 	previous := zap.L()
 	zap.ReplaceGlobals(log)
 	t.Cleanup(func() { zap.ReplaceGlobals(previous) })

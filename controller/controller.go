@@ -5,10 +5,11 @@ import (
 	"encoding/json/v2"
 	"net/http"
 
-	"github.com/crylabsorg/prostack-go/logger"
-	errorv1 "github.com/crylabsorg/prostack-go/pkg/proto/prostack/error/v1"
 	"go.uber.org/zap"
 	"google.golang.org/grpc/status"
+
+	"github.com/crylabsorg/prostack-go/logger"
+	errorv1 "github.com/crylabsorg/prostack-go/pkg/proto/prostack/error/v1"
 )
 
 type Controller struct{}
@@ -30,8 +31,8 @@ func writeJSON(ctx context.Context, w http.ResponseWriter, httpStatus int, data 
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(httpStatus)
-	if _, err := w.Write(body); err != nil {
-		logger.GetLogger(ctx).Warn("failed to write response", zap.Error(err))
+	if _, writeErr := w.Write(body); writeErr != nil {
+		logger.GetLogger(ctx).Warn("failed to write response", zap.Error(writeErr))
 	}
 }
 

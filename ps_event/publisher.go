@@ -1,4 +1,4 @@
-package ps_event
+package ps_event //nolint:staticcheck // Preserve the public package name for import compatibility.
 
 import (
 	"context"

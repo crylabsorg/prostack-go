@@ -9,7 +9,6 @@ import (
 )
 
 func GetLogger(ctx context.Context) *zap.Logger {
-	//nolint:forbidigo // fine in this package
 	logger := zap.L()
 	if ctx == nil {
 		return logger
@@ -27,7 +26,8 @@ func (c traceCore) With(fields []zapcore.Field) zapcore.Core {
 }
 
 func traceFields(fields []zapcore.Field) []zapcore.Field {
-	result := make([]zapcore.Field, 0, len(fields)+2)
+	const traceFieldCount = 2
+	result := make([]zapcore.Field, 0, len(fields)+traceFieldCount)
 	for _, field := range fields {
 		ctx, ok := field.Interface.(context.Context)
 		if !ok {

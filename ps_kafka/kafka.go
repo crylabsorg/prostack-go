@@ -1,16 +1,17 @@
-package ps_kafka
+package ps_kafka //nolint:staticcheck // Preserve the public package name for import compatibility.
 
 import (
 	"context"
 	"fmt"
 	"strconv"
 
-	"github.com/crylabsorg/prostack-go/ps_event"
 	"github.com/twmb/franz-go/pkg/kgo"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
+
+	"github.com/crylabsorg/prostack-go/ps_event"
 )
 
 type Publisher struct{ client *kgo.Client }
@@ -54,7 +55,12 @@ func (p *Publisher) Publish(ctx context.Context, message ps_event.OutboxMessage)
 // RunConsumer processes one record at a time and commits only after success.
 // On failure it closes the client without committing, so the next run retries
 // the record. Draining stops polling and lets the current handler finish.
-func RunConsumer(ctx, drainingCtx context.Context, brokers []string, topic, group string, handle func(context.Context, *kgo.Record) error) error {
+func RunConsumer(
+	ctx, drainingCtx context.Context,
+	brokers []string,
+	topic, group string,
+	handle func(context.Context, *kgo.Record) error,
+) error {
 	client, err := kgo.NewClient(kgo.SeedBrokers(brokers...), kgo.ConsumeTopics(topic),
 		kgo.ConsumerGroup(group), kgo.DisableAutoCommit(), kgo.BlockRebalanceOnPoll(),
 		kgo.AllowAutoTopicCreation())
@@ -71,14 +77,14 @@ func RunConsumer(ctx, drainingCtx context.Context, brokers []string, topic, grou
 		if readCtx.Err() != nil {
 			return nil
 		}
-		if err := fetches.Err(); err != nil {
-			return fmt.Errorf("kafka fetch %s: %w", topic, err)
+		if fetchErr := fetches.Err(); fetchErr != nil {
+			return fmt.Errorf("kafka fetch %s: %w", topic, fetchErr)
 		}
 		for _, record := range fetches.Records() {
-			if err := processRecord(ctx, record, handle, func(ctx context.Context, record *kgo.Record) error {
+			if processErr := processRecord(ctx, record, handle, func(ctx context.Context, record *kgo.Record) error {
 				return client.CommitRecords(ctx, record)
-			}); err != nil {
-				return err
+			}); processErr != nil {
+				return processErr
 			}
 		}
 		client.AllowRebalance()
@@ -86,7 +92,11 @@ func RunConsumer(ctx, drainingCtx context.Context, brokers []string, topic, grou
 	return nil
 }
 
-func processRecord(ctx context.Context, record *kgo.Record, handle, commit func(context.Context, *kgo.Record) error) error {
+func processRecord(
+	ctx context.Context,
+	record *kgo.Record,
+	handle, commit func(context.Context, *kgo.Record) error,
+) error {
 	ctx = otel.GetTextMapPropagator().Extract(ctx, recordCarrier{record})
 	publisherContext := trace.SpanContextFromContext(ctx)
 	options := []trace.SpanStartOption{
@@ -112,7 +122,13 @@ func processRecord(ctx context.Context, record *kgo.Record, handle, commit func(
 	if err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
-		return fmt.Errorf("kafka process %s partition %d offset %d: %w", record.Topic, record.Partition, record.Offset, err)
+		return fmt.Errorf(
+			"kafka process %s partition %d offset %d: %w",
+			record.Topic,
+			record.Partition,
+			record.Offset,
+			err,
+		)
 	}
 	return nil
 }

@@ -1,11 +1,10 @@
-package ps_otel
+package ps_otel //nolint:staticcheck // Preserve the public package name for import compatibility.
 
 import (
 	"context"
 	"net/http"
 	"time"
 
-	"github.com/crylabsorg/prostack-go/logger"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"go.opentelemetry.io/contrib/exporters/autoexport"
@@ -14,6 +13,8 @@ import (
 	otelprom "go.opentelemetry.io/otel/exporters/prometheus"
 	"go.opentelemetry.io/otel/sdk/metric"
 	"go.uber.org/zap"
+
+	"github.com/crylabsorg/prostack-go/logger"
 )
 
 func InitMetrics(ctx context.Context, mux *http.ServeMux) func() {
@@ -41,8 +42,8 @@ func InitMetrics(ctx context.Context, mux *http.ServeMux) func() {
 
 	otel.SetMeterProvider(mp)
 
-	if err := runtime.Start(); err != nil {
-		logger.GetLogger(ctx).Fatal("failed to start runtime instrumentation", zap.Error(err))
+	if runtimeErr := runtime.Start(); runtimeErr != nil {
+		logger.GetLogger(ctx).Fatal("failed to start runtime instrumentation", zap.Error(runtimeErr))
 	}
 
 	shutdown := func() {

@@ -1,4 +1,4 @@
-package ps_event
+package ps_event //nolint:staticcheck // Preserve the public package name for import compatibility.
 
 import (
 	"context"
@@ -6,12 +6,13 @@ import (
 	"sync"
 	"time"
 
-	"github.com/crylabsorg/prostack-go/logger"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap"
+
+	"github.com/crylabsorg/prostack-go/logger"
 )
 
 // Outbox reserves messages while publish runs and marks only acknowledged messages as processed.
@@ -33,6 +34,7 @@ type OutboxMessage interface {
 // independently of whether the outbox record was successfully marked as processed.
 type OutboxMessagePublishResult struct {
 	OutboxMessage
+
 	Err error
 }
 
@@ -42,7 +44,12 @@ type outboxPublisher struct {
 	ticker    *time.Ticker
 }
 
-func RunOutboxPublisher(ctx context.Context, drainingCtx context.Context, publisher Publisher, outbox Outbox) <-chan struct{} {
+func RunOutboxPublisher(
+	ctx context.Context,
+	drainingCtx context.Context,
+	publisher Publisher,
+	outbox Outbox,
+) <-chan struct{} {
 	op := outboxPublisher{publisher: publisher, outbox: outbox, ticker: time.NewTicker(time.Second)}
 	done := make(chan struct{})
 	go func() {
@@ -79,13 +86,15 @@ func (op *outboxPublisher) run(ctx context.Context, drainingCtx context.Context)
 
 // publishBatch publishes and completes one reserved batch.
 func (op *outboxPublisher) publishBatch(ctx context.Context) error {
-	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	const batchTimeout = 30 * time.Second
+	ctx, cancel := context.WithTimeout(ctx, batchTimeout)
 	defer cancel()
 	return op.outbox.ProcessOutboxBatch(ctx, func(messages []OutboxMessage) []OutboxMessagePublishResult {
 		results := op.publishMessages(ctx, messages)
 		for _, result := range results {
 			if result.Err != nil {
-				logger.GetLogger(ctx).Error("publish outbox message", zap.String("id", result.ID()), zap.String("subject", result.Subject()), zap.Error(result.Err))
+				logger.GetLogger(ctx).
+					Error("publish outbox message", zap.String("id", result.ID()), zap.String("subject", result.Subject()), zap.Error(result.Err))
 			}
 		}
 		return results
@@ -122,13 +131,17 @@ func (op *outboxPublisher) publishMessages(ctx context.Context, messages []Outbo
 			defer func() {
 				<-semaphore
 			}()
-			sourceCtx := propagation.TraceContext{}.Extract(context.Background(), propagation.MapCarrier(message.TraceContext()))
+			sourceCtx := propagation.TraceContext{}.Extract(
+				context.Background(),
+				propagation.MapCarrier(message.TraceContext()),
+			)
 			sourceSpanContext := trace.SpanContextFromContext(sourceCtx)
 			options := []trace.SpanStartOption{trace.WithSpanKind(trace.SpanKindProducer)}
 			if sourceSpanContext.IsValid() {
 				options = append(options, trace.WithLinks(trace.Link{SpanContext: sourceSpanContext}))
 			}
-			spanCtx, span := otel.Tracer("ps_event").Start(ctx, fmt.Sprintf("publish %s", message.Subject()), options...)
+			spanCtx, span := otel.Tracer("ps_event").
+				Start(ctx, fmt.Sprintf("publish %s", message.Subject()), options...)
 			defer span.End()
 			err := op.publisher.Publish(spanCtx, message)
 			if err != nil {

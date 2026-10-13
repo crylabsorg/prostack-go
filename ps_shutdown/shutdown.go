@@ -1,11 +1,11 @@
-// Package shutdown implements the k8s lame-duck termination sequence. On
+// Package ps_shutdown implements the k8s lame-duck termination sequence. On
 // SIGTERM a service must keep serving briefly: k8s removes the pod from Service
 // endpoints asynchronously, and until that propagates the load balancer keeps
 // routing to it. Closing the listeners at once turns that traffic into
 // connection-refused 5xx. New flips the draining flag (so /readyz returns 503
 // and the pod is pulled from the load balancer), waits drainDelay for the
 // deregistration to propagate, then calls cancel so the servers stop gracefully.
-package ps_shutdown
+package ps_shutdown //nolint:staticcheck // Preserve the public package name for import compatibility.
 
 import (
 	"context"
@@ -23,14 +23,14 @@ import (
 // so listeners stay up until the pod has been deregistered.
 func New(ctx context.Context, cancel context.CancelFunc) context.Context {
 	signalCtx, signalCtxStop := signal.NotifyContext(context.WithoutCancel(ctx), os.Interrupt, syscall.SIGTERM)
-	go runDrain(ctx, cancel, signalCtx, signalCtxStop)
+	go runDrain(ctx, signalCtx, cancel, signalCtxStop)
 	return signalCtx
 }
 
 func runDrain(
 	ctx context.Context,
-	cancel context.CancelFunc,
 	signalCtx context.Context,
+	cancel context.CancelFunc,
 	signalCtxStop context.CancelFunc,
 ) {
 	select {

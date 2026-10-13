@@ -1,10 +1,9 @@
-package ps_nats
+package ps_nats //nolint:staticcheck // Preserve the public package name for import compatibility.
 
 import (
 	"context"
 	"fmt"
 
-	"github.com/crylabsorg/prostack-go/ps_event"
 	"github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
 	"go.opentelemetry.io/otel"
@@ -12,6 +11,8 @@ import (
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/trace"
+
+	"github.com/crylabsorg/prostack-go/ps_event"
 )
 
 type Publisher struct{ js jetstream.JetStream }

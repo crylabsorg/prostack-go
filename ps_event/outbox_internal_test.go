@@ -1,4 +1,4 @@
-package ps_event
+package ps_event //nolint:staticcheck // Preserve the public package name for import compatibility.
 
 import (
 	"context"
@@ -26,7 +26,10 @@ type testOutbox struct {
 	completeErr error
 }
 
-func (o *testOutbox) ProcessOutboxBatch(ctx context.Context, publish func([]OutboxMessage) []OutboxMessagePublishResult) error {
+func (o *testOutbox) ProcessOutboxBatch(
+	_ context.Context,
+	publish func([]OutboxMessage) []OutboxMessagePublishResult,
+) error {
 	if len(o.messages) > 0 {
 		o.results = publish(o.messages)
 	}
@@ -39,14 +42,18 @@ func (publish testPublisher) Publish(ctx context.Context, message OutboxMessage)
 	return publish(ctx, message)
 }
 
+//nolint:paralleltest // The test temporarily replaces the process-wide zap logger.
 func TestPublishBatchPartialSuccess(t *testing.T) {
 	core, logs := observer.New(zap.ErrorLevel)
 	restore := zap.ReplaceGlobals(zap.New(core))
 	defer restore()
 	publishErr := errors.New("NATS rejected message")
 	completeErr := errors.New("commit failed")
-	outbox := &testOutbox{messages: []OutboxMessage{testOutboxMessage{"success"}, testOutboxMessage{"failure"}}, completeErr: completeErr}
-	publisher := testPublisher(func(ctx context.Context, msg OutboxMessage) error {
+	outbox := &testOutbox{
+		messages:    []OutboxMessage{testOutboxMessage{"success"}, testOutboxMessage{"failure"}},
+		completeErr: completeErr,
+	}
+	publisher := testPublisher(func(_ context.Context, msg OutboxMessage) error {
 		if msg.ID() == "failure" {
 			return publishErr
 		}
@@ -67,6 +74,7 @@ func TestPublishBatchPartialSuccess(t *testing.T) {
 }
 
 func TestPublishBatchCanceled(t *testing.T) {
+	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	outbox := &testOutbox{messages: []OutboxMessage{testOutboxMessage{"canceled"}}}
@@ -79,8 +87,8 @@ func TestPublishBatchCanceled(t *testing.T) {
 }
 
 func TestPublisherWaitsForInFlightBatchOnDrain(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	t.Parallel()
+	ctx := t.Context()
 	drainingCtx, drain := context.WithCancel(context.Background())
 	defer drain()
 	started := make(chan struct{})
@@ -89,7 +97,7 @@ func TestPublisherWaitsForInFlightBatchOnDrain(t *testing.T) {
 	closeRelease := func() { releaseOnce.Do(func() { close(release) }) }
 	defer closeRelease()
 	outbox := &testOutbox{messages: []OutboxMessage{testOutboxMessage{"in-flight"}}}
-	publisher := testPublisher(func(ctx context.Context, msg OutboxMessage) error {
+	publisher := testPublisher(func(ctx context.Context, _ OutboxMessage) error {
 		close(started)
 		select {
 		case <-release:

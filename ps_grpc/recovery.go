@@ -1,15 +1,16 @@
 //nolint:nolintlint,revive // ignore
-package ps_grpc
+package ps_grpc //nolint:staticcheck // Preserve the public package name for import compatibility.
 
 import (
 	"context"
 	"runtime/debug"
 
-	"github.com/crylabsorg/prostack-go/logger"
 	"go.uber.org/zap"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+
+	"github.com/crylabsorg/prostack-go/logger"
 )
 
 func RecoveryInterceptor(

@@ -1,4 +1,4 @@
-package ps_otel
+package ps_otel //nolint:staticcheck // Preserve the public package name for import compatibility.
 
 import (
 	"context"
@@ -15,7 +15,7 @@ import (
 	"github.com/crylabsorg/prostack-go/logger"
 )
 
-func InitTraces(ctx context.Context, serviceName string) func() {
+func InitTraces(ctx context.Context, _ string) func() {
 	exporter, err := autoexport.NewSpanExporter(ctx)
 	if err != nil {
 		logger.GetLogger(ctx).Fatal("failed to create trace exporter", zap.Error(err))
@@ -29,6 +29,7 @@ func InitTraces(ctx context.Context, serviceName string) func() {
 		propagation.Baggage{},
 	))
 
+	//nolint:reassign // Bootstrap instruments HTTP clients that use the process default transport.
 	http.DefaultTransport = otelhttp.NewTransport(nil)
 
 	shutdown := func() {

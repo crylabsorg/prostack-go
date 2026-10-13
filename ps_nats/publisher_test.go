@@ -1,4 +1,4 @@
-package ps_nats
+package ps_nats_test
 
 import (
 	"context"
@@ -8,10 +8,13 @@ import (
 	"github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
 	"github.com/stretchr/testify/require"
+
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/propagation"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/trace"
+
+	"github.com/crylabsorg/prostack-go/ps_nats"
 )
 
 type publisherMessage struct{}
@@ -23,13 +26,19 @@ func (publisherMessage) TraceContext() map[string]string { return nil }
 
 type publisherJetStream struct {
 	jetstream.JetStream
+
 	publish func(context.Context, *nats.Msg) (*jetstream.PubAck, error)
 }
 
-func (js publisherJetStream) PublishMsg(ctx context.Context, msg *nats.Msg, _ ...jetstream.PublishOpt) (*jetstream.PubAck, error) {
+func (js publisherJetStream) PublishMsg(
+	ctx context.Context,
+	msg *nats.Msg,
+	_ ...jetstream.PublishOpt,
+) (*jetstream.PubAck, error) {
 	return js.publish(ctx, msg)
 }
 
+//nolint:paralleltest // The test temporarily replaces OpenTelemetry globals.
 func TestPublisherPropagatesContextAndErrors(t *testing.T) {
 	provider := sdktrace.NewTracerProvider()
 	previousProvider, previousPropagator := otel.GetTracerProvider(), otel.GetTextMapPropagator()
@@ -41,14 +50,23 @@ func TestPublisherPropagatesContextAndErrors(t *testing.T) {
 		require.NoError(t, provider.Shutdown(context.Background()))
 	})
 	publishErr := errors.New("nats rejected event")
-	publisher := NewPublisher(publisherJetStream{publish: func(ctx context.Context, message *nats.Msg) (*jetstream.PubAck, error) {
-		require.Equal(t, "event-id", message.Header.Get(nats.MsgIdHdr))
-		require.Equal(t, "user.created", message.Subject)
-		require.JSONEq(t, `{"id":"user-id"}`, string(message.Data))
-		extracted := propagation.TraceContext{}.Extract(context.Background(), propagation.HeaderCarrier(message.Header))
-		require.True(t, trace.SpanContextFromContext(extracted).IsValid())
-		require.Equal(t, trace.SpanContextFromContext(ctx).SpanID(), trace.SpanContextFromContext(extracted).SpanID())
-		return nil, publishErr
-	}})
+	publisher := ps_nats.NewPublisher(
+		publisherJetStream{publish: func(ctx context.Context, message *nats.Msg) (*jetstream.PubAck, error) {
+			require.Equal(t, "event-id", message.Header.Get(nats.MsgIdHdr))
+			require.Equal(t, "user.created", message.Subject)
+			require.JSONEq(t, `{"id":"user-id"}`, string(message.Data))
+			extracted := propagation.TraceContext{}.Extract(
+				context.Background(),
+				propagation.HeaderCarrier(message.Header),
+			)
+			require.True(t, trace.SpanContextFromContext(extracted).IsValid())
+			require.Equal(
+				t,
+				trace.SpanContextFromContext(ctx).SpanID(),
+				trace.SpanContextFromContext(extracted).SpanID(),
+			)
+			return nil, publishErr
+		}},
+	)
 	require.ErrorIs(t, publisher.Publish(context.Background(), publisherMessage{}), publishErr)
 }

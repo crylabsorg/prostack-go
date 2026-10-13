@@ -1,4 +1,4 @@
-package ps_swagger
+package ps_swagger //nolint:staticcheck // Preserve the public package name for import compatibility.
 
 import (
 	"context"
@@ -6,8 +6,9 @@ import (
 	"io/fs"
 	"net/http"
 
-	"github.com/crylabsorg/prostack-go/logger"
 	"go.uber.org/zap"
+
+	"github.com/crylabsorg/prostack-go/logger"
 )
 
 //go:embed swaggerui

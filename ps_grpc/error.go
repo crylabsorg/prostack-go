@@ -1,5 +1,5 @@
 //nolint:nolintlint,revive // ignore
-package ps_grpc
+package ps_grpc //nolint:staticcheck // Preserve the public package name for import compatibility.
 
 import (
 	"context"

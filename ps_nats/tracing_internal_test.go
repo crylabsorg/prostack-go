@@ -1,4 +1,4 @@
-package ps_nats
+package ps_nats //nolint:staticcheck // Preserve the public package name for import compatibility.
 
 import (
 	"context"
@@ -16,12 +16,14 @@ import (
 
 type tracingMessage struct {
 	jetstream.Msg
+
 	headers nats.Header
 }
 
 func (m tracingMessage) Headers() nats.Header { return m.headers }
 func (m tracingMessage) Subject() string      { return "user.created" }
 
+//nolint:paralleltest // The test and its subtests share OpenTelemetry globals and a span recorder.
 func TestConsumerTraceLink(t *testing.T) {
 	recorder := tracetest.NewSpanRecorder()
 	provider := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(recorder))

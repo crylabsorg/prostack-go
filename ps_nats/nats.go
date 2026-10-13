@@ -1,4 +1,4 @@
-package ps_nats
+package ps_nats //nolint:staticcheck // Preserve the public package name for import compatibility.
 
 import (
 	"context"
@@ -7,13 +7,14 @@ import (
 	"sync"
 	"time"
 
-	"github.com/crylabsorg/prostack-go/logger"
 	"github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap"
+
+	"github.com/crylabsorg/prostack-go/logger"
 )
 
 func Connect(url string) (*nats.Conn, error) {
@@ -56,7 +57,11 @@ type consumer struct {
 	workers  sync.WaitGroup
 }
 
-func newConsumer(jsConsumer jetstream.Consumer, parallelism int, handle func(context.Context, jetstream.Msg) error) (*consumer, error) {
+func newConsumer(
+	jsConsumer jetstream.Consumer,
+	parallelism int,
+	handle func(context.Context, jetstream.Msg) error,
+) (*consumer, error) {
 	if parallelism <= 0 {
 		return nil, fmt.Errorf("parallelism must be greater than zero")
 	}
@@ -67,6 +72,7 @@ func newConsumer(jsConsumer jetstream.Consumer, parallelism int, handle func(con
 	return &consumer{consumer: jsConsumer, handle: handle, slots: slots}, nil
 }
 
+//nolint:spancheck // The caller owns the returned span and ends it after processing the message.
 func (c *consumer) traceContext(ctx context.Context, msg jetstream.Msg) (context.Context, trace.Span) {
 	ctx = otel.GetTextMapPropagator().Extract(ctx, propagation.HeaderCarrier(msg.Headers()))
 	publisherContext := trace.SpanContextFromContext(ctx)
@@ -75,7 +81,8 @@ func (c *consumer) traceContext(ctx context.Context, msg jetstream.Msg) (context
 		options = append(options, trace.WithLinks(trace.Link{SpanContext: publisherContext}))
 	}
 	spanName := fmt.Sprintf("process %s", msg.Subject())
-	return otel.Tracer("ps_nats").Start(ctx, spanName, options...)
+	ctx, span := otel.Tracer("ps_nats").Start(ctx, spanName, options...)
+	return ctx, span
 }
 
 func (c *consumer) run(ctx context.Context, drainingCtx context.Context) error {
@@ -99,12 +106,12 @@ func (c *consumer) run(ctx context.Context, drainingCtx context.Context) error {
 			return nil
 		case <-c.slots:
 		}
-		msg, err := msgs.Next(jetstream.NextContext(readCtx))
-		if err != nil {
-			if errors.Is(err, jetstream.ErrMsgIteratorClosed) || errors.Is(readCtx.Err(), context.Canceled) {
+		msg, nextErr := msgs.Next(jetstream.NextContext(readCtx))
+		if nextErr != nil {
+			if errors.Is(nextErr, jetstream.ErrMsgIteratorClosed) || errors.Is(readCtx.Err(), context.Canceled) {
 				return nil
 			}
-			return err
+			return nextErr
 		}
 		c.workers.Go(func() {
 			defer func() { c.slots <- struct{}{} }()

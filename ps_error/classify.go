@@ -1,4 +1,4 @@
-package ps_error
+package ps_error //nolint:staticcheck // Preserve the public package name for import compatibility.
 
 import (
 	"google.golang.org/grpc/status"

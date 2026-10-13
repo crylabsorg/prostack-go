@@ -1,13 +1,14 @@
-package ps_pg
+package ps_pg //nolint:staticcheck // Preserve the public package name for import compatibility.
 
 import (
 	"context"
 	"time"
 
-	"github.com/crylabsorg/prostack-go/logger"
 	"github.com/exaring/otelpgx"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"go.uber.org/zap"
+
+	"github.com/crylabsorg/prostack-go/logger"
 )
 
 func New(ctx context.Context, url string) (*pgxpool.Pool, func()) {
@@ -29,16 +30,17 @@ func Connect(ctx context.Context, url string) (*pgxpool.Pool, func(), error) {
 	if err != nil {
 		return nil, nil, err
 	}
-	if err := otelpgx.RecordStats(pool); err != nil {
+	if statsErr := otelpgx.RecordStats(pool); statsErr != nil {
 		pool.Close()
-		return nil, nil, err
+		return nil, nil, statsErr
 	}
 
-	pingCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	const pingTimeout = 5 * time.Second
+	pingCtx, cancel := context.WithTimeout(ctx, pingTimeout)
 	defer cancel()
-	if err := pool.Ping(pingCtx); err != nil {
+	if pingErr := pool.Ping(pingCtx); pingErr != nil {
 		pool.Close()
-		return nil, nil, err
+		return nil, nil, pingErr
 	}
 	return pool, pool.Close, nil
 }

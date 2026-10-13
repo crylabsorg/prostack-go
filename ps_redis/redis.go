@@ -1,4 +1,4 @@
-package ps_redis
+package ps_redis //nolint:staticcheck // Preserve the public package name for import compatibility.
 
 import (
 	"context"
@@ -16,11 +16,11 @@ func New(ctx context.Context, addr string) *redis.Client {
 		logger.GetLogger(ctx).Fatal("failed to parse redis URL", zap.Error(err))
 	}
 	client := redis.NewClient(options)
-	if err := redisotel.InstrumentTracing(client); err != nil {
-		logger.GetLogger(ctx).Fatal("failed to instrument redis tracing", zap.Error(err))
+	if traceErr := redisotel.InstrumentTracing(client); traceErr != nil {
+		logger.GetLogger(ctx).Fatal("failed to instrument redis tracing", zap.Error(traceErr))
 	}
-	if err := redisotel.InstrumentMetrics(client); err != nil {
-		logger.GetLogger(ctx).Fatal("failed to instrument redis metrics", zap.Error(err))
+	if metricsErr := redisotel.InstrumentMetrics(client); metricsErr != nil {
+		logger.GetLogger(ctx).Fatal("failed to instrument redis metrics", zap.Error(metricsErr))
 	}
 
 	if err = client.Ping(ctx).Err(); err != nil {

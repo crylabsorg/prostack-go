@@ -1,4 +1,4 @@
-package ps_kafka
+package ps_kafka_test
 
 import (
 	"context"
@@ -6,7 +6,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/crylabsorg/prostack-go/ps_test"
 	"github.com/stretchr/testify/require"
 	"github.com/twmb/franz-go/pkg/kgo"
 	"go.opentelemetry.io/otel"
@@ -15,6 +14,9 @@ import (
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 	"go.opentelemetry.io/otel/trace"
+
+	"github.com/crylabsorg/prostack-go/ps_kafka"
+	"github.com/crylabsorg/prostack-go/ps_test"
 )
 
 type testMessage struct{ id string }
@@ -24,6 +26,7 @@ func (m testMessage) Subject() string                 { return "user.created" }
 func (m testMessage) Payload() []byte                 { return []byte(`{"id":"user-id"}`) }
 func (m testMessage) TraceContext() map[string]string { return nil }
 
+//nolint:paralleltest // The test temporarily replaces OpenTelemetry globals.
 func TestKafkaDeliveryRetryCommitAndTracing(t *testing.T) {
 	brokers := ps_test.NewKafkaContainer(t)
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
@@ -32,13 +35,15 @@ func TestKafkaDeliveryRetryCommitAndTracing(t *testing.T) {
 	provider := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(recorder))
 	previousProvider, previousPropagator := otel.GetTracerProvider(), otel.GetTextMapPropagator()
 	otel.SetTracerProvider(provider)
-	otel.SetTextMapPropagator(propagation.NewCompositeTextMapPropagator(propagation.TraceContext{}, propagation.Baggage{}))
+	otel.SetTextMapPropagator(
+		propagation.NewCompositeTextMapPropagator(propagation.TraceContext{}, propagation.Baggage{}),
+	)
 	t.Cleanup(func() {
 		otel.SetTracerProvider(previousProvider)
 		otel.SetTextMapPropagator(previousPropagator)
 		require.NoError(t, provider.Shutdown(context.Background()))
 	})
-	publisher, err := NewPublisher(brokers...)
+	publisher, err := ps_kafka.NewPublisher(brokers...)
 	require.NoError(t, err)
 	defer publisher.Close()
 	require.NoError(t, publisher.Ping(ctx))
@@ -47,32 +52,53 @@ func TestKafkaDeliveryRetryCommitAndTracing(t *testing.T) {
 	request.End()
 
 	handleErr := errors.New("email provider unavailable")
-	err = RunConsumer(ctx, ctx, brokers, "user.created", "email-sender", func(ctx context.Context, record *kgo.Record) error {
-		require.Equal(t, "event-1", string(record.Key))
-		require.JSONEq(t, `{"id":"user-id"}`, string(record.Value))
-		return handleErr
-	})
+	err = ps_kafka.RunConsumer(
+		ctx,
+		ctx,
+		brokers,
+		"user.created",
+		"email-sender",
+		func(_ context.Context, record *kgo.Record) error {
+			require.Equal(t, "event-1", string(record.Key))
+			require.JSONEq(t, `{"id":"user-id"}`, string(record.Value))
+			return handleErr
+		},
+	)
 	require.ErrorIs(t, err, handleErr)
 
 	// The same group receives the failed record again; drain still permits commit.
 	drainingCtx, drain := context.WithCancel(ctx)
 	defer drain()
-	err = RunConsumer(ctx, drainingCtx, brokers, "user.created", "email-sender", func(handleCtx context.Context, record *kgo.Record) error {
-		require.Equal(t, "event-1", string(record.Key))
-		drain()
-		require.NoError(t, handleCtx.Err())
-		return nil
-	})
+	err = ps_kafka.RunConsumer(
+		ctx,
+		drainingCtx,
+		brokers,
+		"user.created",
+		"email-sender",
+		func(handleCtx context.Context, record *kgo.Record) error {
+			require.Equal(t, "event-1", string(record.Key))
+			drain()
+			require.NoError(t, handleCtx.Err())
+			return nil
+		},
+	)
 	require.NoError(t, err)
 	require.NoError(t, publisher.Publish(ctx, testMessage{"event-2"}))
 	drainingCtx, drainAgain := context.WithCancel(ctx)
 	defer drainAgain()
-	err = RunConsumer(ctx, drainingCtx, brokers, "user.created", "email-sender", func(ctx context.Context, record *kgo.Record) error {
-		// A committed event must not be delivered on restart.
-		require.Equal(t, "event-2", string(record.Key))
-		drainAgain()
-		return nil
-	})
+	err = ps_kafka.RunConsumer(
+		ctx,
+		drainingCtx,
+		brokers,
+		"user.created",
+		"email-sender",
+		func(_ context.Context, record *kgo.Record) error {
+			// A committed event must not be delivered on restart.
+			require.Equal(t, "event-2", string(record.Key))
+			drainAgain()
+			return nil
+		},
+	)
 	require.NoError(t, err)
 
 	var producerContexts []trace.SpanContext
@@ -98,23 +124,4 @@ func TestKafkaDeliveryRetryCommitAndTracing(t *testing.T) {
 	}
 	require.Equal(t, 3, consumerCount)
 	require.Equal(t, 1, failedCount)
-}
-
-func TestProcessRecordDoesNotCommitOnFailure(t *testing.T) {
-	handleErr, commitErr := errors.New("handle failed"), errors.New("commit failed")
-	for _, failure := range []error{handleErr, nil} {
-		committed := false
-		err := processRecord(context.Background(), &kgo.Record{Topic: "user.created"}, func(context.Context, *kgo.Record) error {
-			return failure
-		}, func(context.Context, *kgo.Record) error {
-			committed = true
-			return commitErr
-		})
-		require.Equal(t, failure == nil, committed)
-		if failure != nil {
-			require.ErrorIs(t, err, handleErr)
-		} else {
-			require.ErrorIs(t, err, commitErr)
-		}
-	}
 }

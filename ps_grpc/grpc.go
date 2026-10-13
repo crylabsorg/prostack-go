@@ -1,5 +1,5 @@
 //nolint:nolintlint,revive // ignore
-package ps_grpc
+package ps_grpc //nolint:staticcheck // Preserve the public package name for import compatibility.
 
 import (
 	"context"
@@ -65,9 +65,9 @@ func Start(ctx context.Context, address string, grpcServer *grpc.Server) {
 	go func() { errCh <- grpcServer.Serve(listener) }()
 
 	select {
-	case err := <-errCh:
-		if err != nil && !errors.Is(err, grpc.ErrServerStopped) {
-			logger.GetLogger(ctx).Fatal("failed to serve gRPC", zap.Error(err))
+	case serveErr := <-errCh:
+		if serveErr != nil && !errors.Is(serveErr, grpc.ErrServerStopped) {
+			logger.GetLogger(ctx).Fatal("failed to serve gRPC", zap.Error(serveErr))
 		}
 		return
 	case <-ctx.Done():
@@ -75,8 +75,8 @@ func Start(ctx context.Context, address string, grpcServer *grpc.Server) {
 	logger.GetLogger(ctx).Info("start shutdown grpc server")
 
 	grpcServer.GracefulStop()
-	if err := <-errCh; err != nil && !errors.Is(err, grpc.ErrServerStopped) {
-		logger.GetLogger(ctx).Fatal("failed to stop gRPC", zap.Error(err))
+	if stopErr := <-errCh; stopErr != nil && !errors.Is(stopErr, grpc.ErrServerStopped) {
+		logger.GetLogger(ctx).Fatal("failed to stop gRPC", zap.Error(stopErr))
 	}
 	logger.GetLogger(ctx).Info("grpc server gracefully stopped")
 }

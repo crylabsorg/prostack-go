@@ -1,4 +1,4 @@
-package ps_http
+package ps_http //nolint:staticcheck // Preserve the public package name for import compatibility.
 
 import (
 	"context"

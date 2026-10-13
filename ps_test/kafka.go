@@ -18,10 +18,11 @@ func NewKafkaContainer(t *testing.T) []string {
 	// Discover the mapped port before starting Kafka so metadata advertises the
 	// same address clients use to reach the container.
 	container, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
-		ContainerRequest: testcontainers.ContainerRequest{
-			Image: "apache/kafka:4.1.2", ExposedPorts: []string{"9092/tcp"},
-			Entrypoint: []string{"/bin/sh", "-c"},
-			Cmd:        []string{"while [ ! -f /tmp/start-kafka.sh ]; do sleep 0.1; done; exec /bin/sh /tmp/start-kafka.sh"},
+		Image:        "apache/kafka:4.1.2",
+		ExposedPorts: []string{"9092/tcp"},
+		Entrypoint:   []string{"/bin/sh", "-c"},
+		Cmd: []string{
+			"while [ ! -f /tmp/start-kafka.sh ]; do sleep 0.1; done; exec /bin/sh /tmp/start-kafka.sh",
 		},
 		Started: true,
 	})
@@ -31,16 +32,25 @@ func NewKafkaContainer(t *testing.T) []string {
 	require.NoError(t, err)
 	endpoint, err := container.PortEndpoint(ctx, "9092/tcp", "")
 	require.NoError(t, err)
-	script := fmt.Sprintf("sed -i 's|^advertised.listeners=.*|advertised.listeners=PLAINTEXT://%s|' /etc/kafka/docker/server.properties\nexec /etc/kafka/docker/run\n", endpoint)
-	require.NoError(t, container.CopyToContainer(ctx, []byte(script), "/tmp/start-kafka.sh", 0o755))
-	if err := wait.ForLog("Kafka Server started").WithStartupTimeout(2*time.Minute).WaitUntilReady(ctx, container); err != nil {
+	script := fmt.Sprintf(
+		"sed -i 's|^advertised.listeners=.*|advertised.listeners=PLAINTEXT://%s|' /etc/kafka/docker/server.properties\nexec /etc/kafka/docker/run\n",
+		endpoint,
+	)
+	const (
+		scriptMode     = 0o755
+		startupTimeout = 2 * time.Minute
+	)
+	require.NoError(t, container.CopyToContainer(ctx, []byte(script), "/tmp/start-kafka.sh", scriptMode))
+	if readyErr := wait.ForLog("Kafka Server started").
+		WithStartupTimeout(startupTimeout).
+		WaitUntilReady(ctx, container); readyErr != nil {
 		logs, logErr := container.Logs(ctx)
 		require.NoError(t, logErr)
 		defer func() { require.NoError(t, logs.Close()) }()
 		output, readErr := io.ReadAll(logs)
 		require.NoError(t, readErr)
 		t.Log(string(output))
-		require.NoError(t, err)
+		require.NoError(t, readyErr)
 	}
 	return []string{endpoint}
 }

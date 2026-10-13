@@ -1,4 +1,4 @@
-package ps_grpc
+package ps_grpc //nolint:staticcheck // Preserve the public package name for import compatibility.
 
 import (
 	"context"
@@ -21,6 +21,7 @@ func NewClientConn(ctx context.Context, address string, extra ...grpc.DialOption
 	return newClientConn(ctx, address, extra...)
 }
 
+//nolint:revive // Testing helpers keep *testing.T first, preserving the existing API.
 func NewClientConnWithBufconn(t *testing.T, ctx context.Context, listener *bufconn.Listener) *grpc.ClientConn {
 	conn, err := NewClientConnWithBufconnContext(ctx, listener)
 	require.NoError(t, err)
