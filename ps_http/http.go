@@ -3,6 +3,7 @@ package ps_http //nolint:staticcheck // Preserve the public package name for imp
 import (
 	"context"
 	"errors"
+	"net"
 	"net/http"
 	"time"
 
@@ -12,7 +13,55 @@ import (
 	"github.com/crylabsorg/prostack-go/logger"
 )
 
-func newServer(addr string, handler http.Handler, serverName string) *http.Server {
+// Run serves until stopAccepting closes, then waits for active requests.
+// Canceling ctx cancels request contexts and closes remaining connections.
+// Run returns after serving and shutdown have finished.
+func Run(
+	ctx context.Context,
+	stopAccepting <-chan struct{},
+	addr string,
+	handler http.Handler,
+	serverName string,
+) error {
+	server := newServer(ctx, addr, handler, serverName)
+	listenConfig := net.ListenConfig{}
+	listener, err := listenConfig.Listen(ctx, "tcp", server.Addr)
+	if err != nil {
+		return err
+	}
+	logger.GetLogger(ctx).Info("running http server", zap.String("address", listener.Addr().String()))
+	return serve(ctx, stopAccepting, server, listener)
+}
+
+func serve(ctx context.Context, stopAccepting <-chan struct{}, server *http.Server, listener net.Listener) error {
+	serveResult := make(chan error, 1)
+	go func() {
+		err := server.Serve(listener)
+		if errors.Is(err, http.ErrServerClosed) {
+			err = nil
+		}
+		serveResult <- err
+	}()
+
+	select {
+	case err := <-serveResult:
+		return errors.Join(err, server.Close())
+	case <-stopAccepting:
+	case <-ctx.Done():
+	}
+
+	shutdownErr := server.Shutdown(ctx)
+	if shutdownErr != nil {
+		closeErr := server.Close()
+		if errors.Is(shutdownErr, ctx.Err()) {
+			shutdownErr = nil // Context cancellation is a normal forced shutdown.
+		}
+		shutdownErr = errors.Join(shutdownErr, closeErr)
+	}
+	return errors.Join(shutdownErr, <-serveResult)
+}
+
+func newServer(ctx context.Context, addr string, handler http.Handler, serverName string) *http.Server {
 	const readTimeout = 30 * time.Second
 	const writeTimeout = 30 * time.Second
 	const idleTimeout = 5 * time.Second
@@ -22,46 +71,6 @@ func newServer(addr string, handler http.Handler, serverName string) *http.Serve
 		ReadTimeout:  readTimeout,
 		WriteTimeout: writeTimeout,
 		IdleTimeout:  idleTimeout,
+		BaseContext:  func(net.Listener) context.Context { return ctx },
 	}
-}
-
-func Run(ctx context.Context, addr string, handler http.Handler, serverName string) error {
-	s := newServer(addr, handler, serverName)
-
-	errChan := make(chan error, 1)
-
-	// Start the server in a goroutine.
-	go func() {
-		logger.GetLogger(ctx).Info("Server is starting", zap.String("addr", s.Addr))
-		if err := s.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			errChan <- err
-		}
-		close(errChan)
-	}()
-
-	select {
-	case err := <-errChan:
-		// Listener failed to start (e.g. the port is already in use) before a
-		// shutdown was requested. Surface it immediately so main can fail fast
-		// instead of running on without its server until SIGTERM.
-		return err
-	case <-ctx.Done():
-	}
-
-	logger.GetLogger(ctx).Info("Start shutdown server")
-
-	// Give outstanding requests a deadline for completion.
-	const timeout = 5 * time.Second
-	shutdownCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), timeout)
-	defer cancel()
-
-	// Asking listener to shut down and shed load.
-	err := s.Shutdown(shutdownCtx)
-	if err != nil {
-		return err
-	}
-
-	err = <-errChan
-	logger.GetLogger(ctx).Info("Server shutdown complete")
-	return err
 }

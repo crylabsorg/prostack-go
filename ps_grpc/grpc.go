@@ -19,7 +19,60 @@ import (
 	"google.golang.org/grpc/reflection"
 )
 
-func NewServer(healthServer *health.Server) *grpc.Server {
+// Run serves until stopAccepting closes, then waits for active RPCs.
+// Canceling ctx forces remaining RPCs to stop.
+// register installs application services before serving starts.
+// Run returns after serving and shutdown have finished.
+func Run(
+	ctx context.Context,
+	stopAccepting <-chan struct{},
+	address string,
+	healthServer *health.Server,
+	register func(*grpc.Server),
+) error {
+	server := newServer(healthServer)
+	register(server)
+	listenConfig := net.ListenConfig{}
+	listener, err := listenConfig.Listen(ctx, "tcp", address)
+	if err != nil {
+		return err
+	}
+	logger.GetLogger(ctx).Info("running grpc server", zap.String("address", listener.Addr().String()))
+	return serve(ctx, stopAccepting, server, listener)
+}
+
+func serve(ctx context.Context, stopAccepting <-chan struct{}, server *grpc.Server, listener net.Listener) error {
+	serveResult := make(chan error, 1)
+	go func() {
+		err := server.Serve(listener)
+		if errors.Is(err, grpc.ErrServerStopped) {
+			err = nil
+		}
+		serveResult <- err
+	}()
+
+	select {
+	case err := <-serveResult:
+		server.Stop()
+		return err
+	case <-stopAccepting:
+	case <-ctx.Done():
+	}
+
+	stopped := make(chan struct{})
+	go func() {
+		defer close(stopped)
+		server.GracefulStop()
+	}()
+	select {
+	case <-stopped:
+	case <-ctx.Done():
+		server.Stop()
+	}
+	return <-serveResult
+}
+
+func newServer(healthServer *health.Server) *grpc.Server {
 	const (
 		maxConnectionIdle     = 15 * time.Second
 		maxConnectionAge      = 60 * time.Second
@@ -49,34 +102,4 @@ func NewServer(healthServer *health.Server) *grpc.Server {
 	reflection.Register(server)
 	healthgrpc.RegisterHealthServer(server, healthServer)
 	return server
-}
-
-func Start(ctx context.Context, address string, grpcServer *grpc.Server) {
-	lc := net.ListenConfig{}
-	listener, err := lc.Listen(ctx, "tcp", address)
-	if err != nil {
-		logger.GetLogger(ctx).Fatal("failed to listen for gRPC", zap.String("address", address), zap.Error(err))
-	}
-	defer listener.Close()
-
-	logger.GetLogger(ctx).Info("running grpc server", zap.String("address", address))
-
-	errCh := make(chan error, 1)
-	go func() { errCh <- grpcServer.Serve(listener) }()
-
-	select {
-	case serveErr := <-errCh:
-		if serveErr != nil && !errors.Is(serveErr, grpc.ErrServerStopped) {
-			logger.GetLogger(ctx).Fatal("failed to serve gRPC", zap.Error(serveErr))
-		}
-		return
-	case <-ctx.Done():
-	}
-	logger.GetLogger(ctx).Info("start shutdown grpc server")
-
-	grpcServer.GracefulStop()
-	if stopErr := <-errCh; stopErr != nil && !errors.Is(stopErr, grpc.ErrServerStopped) {
-		logger.GetLogger(ctx).Fatal("failed to stop gRPC", zap.Error(stopErr))
-	}
-	logger.GetLogger(ctx).Info("grpc server gracefully stopped")
 }
