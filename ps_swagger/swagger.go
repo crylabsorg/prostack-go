@@ -23,9 +23,9 @@ func SetupSwagger(ctx context.Context, mux *http.ServeMux, swaggerSpec []byte) {
 		}
 	})
 
-	swaggerSubFS, err := fs.Sub(swaggerFS, "internal/swaggerui")
+	swaggerSubFS, err := fs.Sub(swaggerFS, "swaggerui")
 	if err != nil {
 		logger.GetLogger(ctx).Fatal("failed to create swagger sub filesystem", zap.Error(err))
 	}
-	mux.Handle("/swagger/", http.StripPrefix("/swagger/", http.FileServer(http.FS(swaggerSubFS))))
+	mux.Handle("/swagger/", http.StripPrefix("/swagger/", http.FileServerFS(swaggerSubFS)))
 }
