@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>AsyncAPI documentation</title>
+    <link rel="stylesheet" href="/asyncapi/asyncapi-ui.css">
+    <style>body { margin: 0; font-family: system-ui, sans-serif; }</style>
+  </head>
+  <body>
+    <div id="asyncapi"></div>
+    <script src="/asyncapi/asyncapi-ui.js"></script>
+    <script>
+      AsyncApiStandalone.render({
+        schema: { url: '/asyncapi.json' },
+        config: { show: { sidebar: true } }
+      }, document.getElementById('asyncapi'));
+    </script>
+  </body>
+</html>
