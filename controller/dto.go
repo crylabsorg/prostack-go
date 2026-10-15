@@ -1,5 +1,9 @@
 package controller
 
+import (
+	"encoding/json/jsontext"
+)
+
 // ErrorResponse is the body returned for every non-2xx response.
 type ErrorResponse struct {
 	// Message is a human-readable description of what went wrong. Intended for
@@ -10,5 +14,5 @@ type ErrorResponse struct {
 	ErrorCode int `json:"errorCode"`
 	// Args are optional values interpolated into the message template (e.g. field names
 	// or limits). Their order matches the placeholders in the message.
-	Args []any `json:"args,omitempty"`
+	Args []jsontext.Value `json:"args,omitempty"`
 }

@@ -2,6 +2,7 @@ package controller
 
 import (
 	"context"
+	"encoding/json/jsontext"
 	"encoding/json/v2"
 	"net/http"
 
@@ -56,10 +57,22 @@ func (c Controller) WriteError(ctx context.Context, w http.ResponseWriter, err e
 	if grpcErr, ok := status.FromError(err); ok {
 		for _, detail := range grpcErr.Details() {
 			if typedDetail, ok1 := detail.(*errorv1.Error); ok1 {
+				values := typedDetail.GetArgs().GetValues()
+				args := make([]jsontext.Value, len(values))
+				for i, value := range values {
+					data, marshalErr := json.Marshal(value.AsInterface())
+					if marshalErr != nil {
+						logger.GetLogger(ctx).Warn("failed to encode error argument", zap.Int("index", i), zap.Error(marshalErr))
+						WriteText(ctx, w, http.StatusInternalServerError, "internal server error")
+						return
+					}
+					args[i] = jsontext.Value(data)
+				}
+
 				writeJSON(ctx, w, int(typedDetail.GetHttpStatus()), ErrorResponse{
 					Message:   grpcErr.Message(),
 					ErrorCode: int(typedDetail.GetErrorCode()),
-					Args:      typedDetail.GetArgs().AsSlice(),
+					Args:      args,
 				})
 				return
 			}
