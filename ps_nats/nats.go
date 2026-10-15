@@ -4,13 +4,15 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
 	"go.opentelemetry.io/otel"
-	"go.opentelemetry.io/otel/propagation"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap"
 
@@ -57,6 +59,40 @@ type consumer struct {
 	workers  sync.WaitGroup
 }
 
+// NATS preserves header casing. Read legacy HTTP-style keys as well as the
+// lowercase propagation keys emitted by OpenTelemetry.
+type headerCarrier nats.Header
+
+func (c headerCarrier) Get(key string) string {
+	values := c.Values(key)
+	if len(values) == 0 {
+		return ""
+	}
+	return values[0]
+}
+
+func (c headerCarrier) Values(key string) []string {
+	if values, ok := c[key]; ok {
+		return values
+	}
+	for header, values := range c {
+		if strings.EqualFold(header, key) {
+			return values
+		}
+	}
+	return nil
+}
+
+func (c headerCarrier) Set(key, value string) { c[key] = []string{value} }
+
+func (c headerCarrier) Keys() []string {
+	keys := make([]string, 0, len(c))
+	for key := range c {
+		keys = append(keys, key)
+	}
+	return keys
+}
+
 func newConsumer(
 	jsConsumer jetstream.Consumer,
 	parallelism int,
@@ -74,9 +110,21 @@ func newConsumer(
 
 //nolint:spancheck // The caller owns the returned span and ends it after processing the message.
 func (c *consumer) traceContext(ctx context.Context, msg jetstream.Msg) (context.Context, trace.Span) {
-	ctx = otel.GetTextMapPropagator().Extract(ctx, propagation.HeaderCarrier(msg.Headers()))
+	ctx = otel.GetTextMapPropagator().Extract(ctx, headerCarrier(msg.Headers()))
 	publisherContext := trace.SpanContextFromContext(ctx)
-	options := []trace.SpanStartOption{trace.WithNewRoot(), trace.WithSpanKind(trace.SpanKindConsumer)}
+	options := []trace.SpanStartOption{
+		trace.WithNewRoot(),
+		trace.WithSpanKind(trace.SpanKindConsumer),
+		trace.WithAttributes(
+			attribute.String("messaging.system", "nats"),
+			attribute.String("messaging.destination.name", msg.Subject()),
+			attribute.String("messaging.operation.name", "process"),
+			attribute.String("messaging.operation.type", "process"),
+		),
+	}
+	if messageID := msg.Headers().Get(nats.MsgIdHdr); messageID != "" {
+		options = append(options, trace.WithAttributes(attribute.String("messaging.message.id", messageID)))
+	}
 	if publisherContext.IsValid() {
 		options = append(options, trace.WithLinks(trace.Link{SpanContext: publisherContext}))
 	}
@@ -119,6 +167,8 @@ func (c *consumer) run(ctx context.Context, drainingCtx context.Context) error {
 			defer span.End()
 			if err1 := c.handle(msgCtx, msg); err1 != nil {
 				span.RecordError(err1)
+				span.SetStatus(codes.Error, err1.Error())
+				span.SetAttributes(attribute.String("error.type", fmt.Sprintf("%T", err1)))
 				logger.GetLogger(msgCtx).Error("failed to handle msg", zap.Error(err1))
 			}
 		})
