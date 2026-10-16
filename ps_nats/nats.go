@@ -134,6 +134,9 @@ func (c *consumer) traceContext(ctx context.Context, msg jetstream.Msg) (context
 }
 
 func (c *consumer) run(ctx context.Context, drainingCtx context.Context) error {
+	if ctx.Err() != nil || drainingCtx.Err() != nil {
+		return nil
+	}
 	msgs, err := c.consumer.Messages(jetstream.PullMaxMessages(cap(c.slots)))
 	if err != nil {
 		return err
@@ -147,6 +150,9 @@ func (c *consumer) run(ctx context.Context, drainingCtx context.Context) error {
 	defer stopDrain()
 
 	for {
+		if ctx.Err() != nil || drainingCtx.Err() != nil {
+			return nil
+		}
 		select {
 		case <-ctx.Done():
 			return nil
