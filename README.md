@@ -21,21 +21,47 @@ This is for Go developers and teams building backend services or standardizing i
 
 ## Quick start
 
-Build a small HTTP service with JSON responses, health endpoints, metrics, and graceful shutdown. This example needs **Go 1.27.1** and curl; it runs without Docker, databases, brokers, or a telemetry collector.
+Build a small HTTP service with JSON responses, health endpoints, metrics, and graceful shutdown. This example uses the shared Make targets and needs **Go 1.27.1**, Git, Make, and curl. It runs without Docker, databases, brokers, or a telemetry collector.
 
-### 1. Create a Go module
+### 1. Create the project
 
 ```sh
-mkdir hello-prostack
+git init hello-prostack
 cd hello-prostack
-go mod init example.com/hello-prostack
-export GOEXPERIMENT=jsonv2
-go get github.com/crylabsorg/prostack-go@22ac19f4178c91fb35440356a134988d3e7776c5
+git submodule add https://github.com/crylabsorg/prostack-go.git prostack-go
+git -C prostack-go checkout ccce79775ef87bf293f0cf15d8d016acb1597bfe
+git add prostack-go
+
+mkdir -p apps/hello
+cd apps/hello
+go mod init example.com/hello-prostack/apps/hello
+go mod edit -replace=github.com/crylabsorg/prostack-go=../../prostack-go
+cd ../..
 ```
 
-The example pins a full source revision. Keep dependencies pinned to the complete release version or source commit you adopt. `GOEXPERIMENT=jsonv2` enables the `encoding/json/v2` package used by the HTTP response helpers.
+The submodule pins the foundation to a full source revision. The local `replace` makes the app use that same checkout. Each `apps/<name>/go.mod` is discovered by the shared Make targets, just as in the showcase.
 
-### 2. Create `main.go`
+### 2. Create the root `Makefile`
+
+```makefile
+ROOT_DIR := $(abspath $(dir $(firstword $(MAKEFILE_LIST))))
+
+include $(ROOT_DIR)/prostack-go/make/consts.mk
+include $(ROOT_DIR)/prostack-go/make/apps.mk
+
+MODULE_DIRS := $(APP_DIRS)
+include $(ROOT_DIR)/prostack-go/make/modules.mk
+
+.DEFAULT_GOAL := build
+
+export OTEL_SERVICE_NAME := hello
+export OTEL_TRACES_EXPORTER := none
+export OTEL_METRICS_EXPORTER := ps_prometheus
+```
+
+The included fragments provide `make mod-tidy`, `make build-hello`, `make run-hello`, and `make test-hello`. The exporter settings keep this example self-contained: traces are disabled and OpenTelemetry metrics are exposed over HTTP.
+
+### 3. Create `apps/hello/main.go`
 
 ```go
 package main
@@ -74,21 +100,16 @@ func main() {
 
 The four getters implement the bootstrap configuration interface. An empty gRPC address keeps this example HTTP-only. Configuration is inline here; applications can load a typed configuration with `ps_config` as described below.
 
-### 3. Run and inspect
+### 4. Run and inspect
 
-Resolve the dependencies for the imports above, then start the service:
+From the project root:
 
 ```sh
-GOEXPERIMENT=jsonv2 go mod tidy
-
-GOEXPERIMENT=jsonv2 \
-OTEL_SERVICE_NAME=hello \
-OTEL_TRACES_EXPORTER=none \
-OTEL_METRICS_EXPORTER=ps_prometheus \
-go run .
+make mod-tidy
+make run-hello
 ```
 
-The explicit exporter settings keep the example self-contained: traces are disabled and OpenTelemetry metrics are exposed over HTTP. In a second terminal:
+`make run-hello` runs from `apps/hello` and inherits the settings exported by the Makefile. In a second terminal:
 
 ```sh
 curl --fail-with-body -i http://127.0.0.1:33003/hello
@@ -129,7 +150,13 @@ Each link opens the implementation in this repository. Import the packages relev
 
 ### Add a package to an existing service
 
-You can keep your existing application lifecycle. For example, `ps_pg.Connect` returns an ordinary `*pgxpool.Pool`, a cleanup function, and an error:
+You can keep your existing application lifecycle. Add the pinned foundation to your Go module:
+
+```sh
+go get github.com/crylabsorg/prostack-go@ccce79775ef87bf293f0cf15d8d016acb1597bfe
+```
+
+For example, `ps_pg.Connect` returns an ordinary `*pgxpool.Pool`, a cleanup function, and an error:
 
 ```go
 databasePool, disconnectDatabase, err := ps_pg.Connect(ctx, databaseURL)
@@ -178,7 +205,6 @@ Review defaults against your environment. The supplied HTTP server serves plaint
 From a checkout of **this repository**:
 
 ```sh
-export GOEXPERIMENT=jsonv2
 make mod-download
 make help
 make test
@@ -199,7 +225,6 @@ Reusable [Make fragments](make/) can also be included by a consuming repository.
 
 | Symptom | What to check |
 | --- | --- |
-| JSON packages are excluded by build constraints | Use Go 1.27.1 and enable `GOEXPERIMENT=jsonv2` in the terminal running Go commands. |
 | Exporters try to reach a local collector | Use the explicit quick-start exporter settings or configure your own OTLP endpoint. |
 | No OpenTelemetry metrics at `/metrics` | Scrape `/otel-metrics` with `OTEL_METRICS_EXPORTER=ps_prometheus`; `/metrics` is a separate registry. |
 | Configuration files are not found | Check the process working directory and your declared configuration tags. |
