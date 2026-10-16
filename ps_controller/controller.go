@@ -1,4 +1,4 @@
-package controller
+package ps_controller
 
 import (
 	"context"

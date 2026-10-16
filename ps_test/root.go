@@ -1,4 +1,4 @@
-package testutils
+package ps_test
 
 import (
 	"os"

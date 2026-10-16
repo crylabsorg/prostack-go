@@ -14,7 +14,7 @@ import (
 
 	"github.com/crylabsorg/prostack-go/ps_grpc"
 
-	"github.com/crylabsorg/prostack-go/controller"
+	"github.com/crylabsorg/prostack-go/ps_controller"
 )
 
 func TestErrorInterceptorHidesUnexpectedError(t *testing.T) {
@@ -26,7 +26,7 @@ func TestErrorInterceptorHidesUnexpectedError(t *testing.T) {
 	require.Equal(t, "internal server error", status.Convert(err).Message())
 
 	response := httptest.NewRecorder()
-	controller.NewController().WriteError(context.Background(), response, err)
+	ps_controller.NewController().WriteError(context.Background(), response, err)
 	require.Equal(t, http.StatusInternalServerError, response.Code)
 	require.NotContains(t, response.Body.String(), "database connection failed")
 }

@@ -1,4 +1,4 @@
-package controller_test
+package ps_controller_test
 
 import (
 	"context"
@@ -8,14 +8,14 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/crylabsorg/prostack-go/controller"
+	"github.com/crylabsorg/prostack-go/ps_controller"
 )
 
 func TestWriteJSONEncodingError(t *testing.T) {
 	t.Parallel()
 	w := httptest.NewRecorder()
 
-	controller.NewController().WriteJSON(context.Background(), w, http.StatusOK, make(chan int))
+	ps_controller.NewController().WriteJSON(context.Background(), w, http.StatusOK, make(chan int))
 
 	require.Equal(t, http.StatusInternalServerError, w.Code)
 	require.Equal(t, "application/json", w.Header().Get("Content-Type"))
