@@ -6,7 +6,9 @@
 
 prostack means **production stack**. It grew out of repeating the same infrastructure setup across projects and companies before writing business code. This repository contains the reusable foundation; [prostack-go-showcase](https://github.com/crylabsorg/prostack-go-showcase) demonstrates it in a runnable application.
 
-[Build a small service](#quick-start) · [Explore the packages](#packages) · [Integration guide](#integration-guide) · [Run the complete example](https://github.com/crylabsorg/prostack-go-showcase#quick-start)
+I also saw organizations with many services and teams, each assembling its own mix of technologies and infrastructure conventions. I wanted a shared baseline for recurring concerns—lifecycle, errors, telemetry, and tests—to standardize engineering practices across teams and make it easier for developers to move between projects. Teams can choose the components their applications need.
+
+[Quick start](#quick-start) · [Explore the packages](#packages) · [Integration guide](#integration-guide)
 
 ## Why prostack-go?
 
@@ -21,184 +23,39 @@ This is for Go developers and teams building backend services or standardizing i
 
 ## Quick start
 
-Build a small HTTP service with JSON responses, health endpoints, metrics, and graceful shutdown. This example uses the shared Make targets and needs **Go 1.27.1**, Git, Make, and curl. It runs without Docker, databases, brokers, or a telemetry collector.
+Start with [prostack-go-showcase](https://github.com/crylabsorg/prostack-go-showcase#quick-start), a runnable application with configuration, migrations, API contracts, and local infrastructure already connected.
 
-### 1. Create the project
+Create a user and follow the complete workflow: **HTTP → gRPC → PostgreSQL + transactional outbox → NATS JetStream and Kafka → email consumer**. The walkthrough shows how to:
 
-```sh
-git init hello-prostack
-cd hello-prostack
-git submodule add https://github.com/crylabsorg/prostack-go.git prostack-go
-git -C prostack-go checkout ccce79775ef87bf293f0cf15d8d016acb1597bfe
-git add prostack-go
+- Create a user with an HTTP request, receive **201 Created**, and fetch the stored user.
+- Follow `user.created` from the database transaction through both brokers to a logged fake welcome email and a delivery record in MongoDB.
+- Inspect request traces and asynchronous span links in Jaeger, plus health and metrics endpoints.
 
-mkdir -p apps/hello
-cd apps/hello
-go mod init example.com/hello-prostack/apps/hello
-go mod edit -replace=github.com/crylabsorg/prostack-go=../../prostack-go
-cd ../..
-```
+`prostack-go` supplies the shared lifecycle, instrumented clients and transports, error handling, and event publishing worker. The showcase demonstrates how to connect those pieces to application business logic and persistence.
 
-The submodule pins the foundation to a full source revision. The local `replace` makes the app use that same checkout. Each `apps/<name>/go.mod` is discovered by the shared Make targets, just as in the showcase.
-
-### 2. Create the root `Makefile`
-
-```makefile
-ROOT_DIR := $(abspath $(dir $(firstword $(MAKEFILE_LIST))))
-
-include $(ROOT_DIR)/prostack-go/make/consts.mk
-include $(ROOT_DIR)/prostack-go/make/apps.mk
-
-MODULE_DIRS := $(APP_DIRS)
-include $(ROOT_DIR)/prostack-go/make/modules.mk
-
-.DEFAULT_GOAL := build
-
-export OTEL_SERVICE_NAME := hello
-export OTEL_TRACES_EXPORTER := none
-export OTEL_METRICS_EXPORTER := ps_prometheus
-```
-
-The included fragments provide `make mod-tidy`, `make build-hello`, `make run-hello`, and `make test-hello`. The exporter settings keep this example self-contained: traces are disabled and OpenTelemetry metrics are exposed over HTTP.
-
-### 3. Create `apps/hello/main.go`
-
-```go
-package main
-
-import (
-	"context"
-	"net/http"
-
-	"github.com/crylabsorg/prostack-go/logger"
-	"github.com/crylabsorg/prostack-go/ps_bootstrap"
-	"github.com/crylabsorg/prostack-go/ps_controller"
-)
-
-type config struct{}
-
-func (config) GetLogPreset() logger.Preset { return logger.PresetDevelopment }
-func (config) GetServiceName() string      { return "hello" }
-func (config) GetHTTPListenAddr() string   { return "127.0.0.1:33003" }
-func (config) GetGRPCListenAddr() string   { return "" }
-
-func main() {
-	ps_bootstrap.Run(
-		func() (config, error) { return config{}, nil },
-		func(_ context.Context, _ context.Context, _ config, app *ps_bootstrap.App) error {
-			controller := ps_controller.NewController()
-			app.GetHTTPServeMux().HandleFunc("GET /hello", func(w http.ResponseWriter, r *http.Request) {
-				controller.WriteJSON(r.Context(), w, http.StatusOK, map[string]string{
-					"message": "hello from prostack",
-				})
-			})
-			return nil
-		},
-	)
-}
-```
-
-The four getters implement the bootstrap configuration interface. An empty gRPC address keeps this example HTTP-only. Configuration is inline here; applications can load a typed configuration with `ps_config` as described below.
-
-### 4. Run and inspect
-
-From the project root:
-
-```sh
-make mod-tidy
-make run-hello
-```
-
-`make run-hello` runs from `apps/hello` and inherits the settings exported by the Makefile. In a second terminal:
-
-```sh
-curl --fail-with-body -i http://127.0.0.1:33003/hello
-curl --fail -i http://127.0.0.1:33003/readyz
-curl --fail http://127.0.0.1:33003/metrics
-curl --fail http://127.0.0.1:33003/otel-metrics
-```
-
-Expect **HTTP 200** and `{"message":"hello from prostack"}` from `/hello`. `/metrics` exposes the application, Go, and process registry; `/otel-metrics` exposes OpenTelemetry metrics when `ps_prometheus` is selected.
-
-Press Ctrl+C and wait for shutdown. Bootstrap marks the service unready, waits **10 seconds** for load balancers to react, then drains handlers and registered workers with a shared **30-second** grace period before dependency cleanup.
-
-For databases, brokers, migrations, tracing in Jaeger, and a complete business workflow, continue with the [showcase quick start](https://github.com/crylabsorg/prostack-go-showcase#quick-start).
+**[Run the showcase](https://github.com/crylabsorg/prostack-go-showcase#quick-start)** for the required tools, dependency setup, migrations, application startup, and verification steps.
 
 ## Packages
 
 Each link opens the implementation in this repository. Import the packages relevant to your application; connections are created when you call their setup functions.
 
-| Package | What you get |
-| --- | --- |
-| [`ps_bootstrap`](ps_bootstrap/bootstrap.go) | Application setup, HTTP and optional gRPC listeners, probes, worker draining, and cleanup. |
-| [`ps_config`](ps_config/config.go) | Typed configuration from YAML, local overrides, declared environment variables, and validation. |
-| [`logger`](logger/logger.go) | Zap development/production presets, context-aware logging, and an OpenTelemetry log bridge. |
-| [`ps_http`](ps_http/http.go), [`ps_controller`](ps_controller/controller.go) | Instrumented HTTP serving, JSON responses, and conversion of gRPC error details into HTTP errors. |
-| [`ps_grpc`](ps_grpc/grpc.go), [`ps_error`](ps_error/error.go) | Instrumented gRPC servers/clients, unary recovery/error interceptors, and typed application errors. |
-| [`ps_pg`](ps_pg/pg.go) | Instrumented pgx connection pools and connection health verification. |
-| [`ps_mongo`](ps_mongo/mongo.go) | Instrumented MongoDB connections and database selection from the URI. |
-| [`ps_redis`](ps_redis/redis.go) | go-redis clients with tracing, metrics, and an initial connection check. |
-| [`ps_nats`](ps_nats/nats.go) | JetStream stream setup, concurrent consumers, publisher support, and trace propagation. |
-| [`ps_kafka`](ps_kafka/kafka.go) | Kafka publishing, concurrent consumers, ordered partition commits, and trace propagation. |
-| [`ps_event`](ps_event/outbox.go) | Outbox/publisher interfaces, a background publishing worker, and fanout to multiple publishers. |
-| [`ps_otel`](ps_otel/traces.go), [`ps_metrics`](ps_metrics/metrics.go) | OpenTelemetry initialization and an application Prometheus registry. |
-| [`ps_healthcheck`](ps_healthcheck/healthcheck.go) | `/healthz`, `/readyz`, and `/startupz` handlers. |
-| [`ps_swagger`](ps_swagger/swagger.go), [`ps_asyncapi`](ps_asyncapi/asyncapi.go) | Embedded documentation UIs for your supplied OpenAPI and AsyncAPI documents. |
-| [`ps_test`](ps_test/postgres.go) | Testcontainers helpers for PostgreSQL, MongoDB, NATS, Kafka, plus gRPC test utilities. |
-
-## Integration guide
-
-### Add a package to an existing service
-
-You can keep your existing application lifecycle. Add the pinned foundation to your Go module:
-
-```sh
-go get github.com/crylabsorg/prostack-go@ccce79775ef87bf293f0cf15d8d016acb1597bfe
-```
-
-For example, `ps_pg.Connect` returns an ordinary `*pgxpool.Pool`, a cleanup function, and an error:
-
-```go
-databasePool, disconnectDatabase, err := ps_pg.Connect(ctx, databaseURL)
-if err != nil {
-	return err
-}
-defer disconnectDatabase()
-```
-
-Your repository can use `databasePool` directly. If you use bootstrap, register cleanup with `app.RegisterCleanup` instead of deferring it inside `setup`, and register a PostgreSQL readiness probe with `databasePool.Ping`. See the [showcase user bootstrap](https://github.com/crylabsorg/prostack-go-showcase/blob/main/apps/user/main.go) for complete wiring.
-
-Choose constructors deliberately: `ps_pg.Connect` returns connection errors; `ps_pg.New`, `ps_mongo.New`, and `ps_redis.New` log fatal startup failures. Database adapters do not create your domain schema or apply migrations. MongoDB transactions require a replica set.
-
-### Configuration and telemetry
-
-`ps_config.New` fills your configuration struct using `mapstructure`, `env`, and `validate` tags. It reads `config.yaml` and optional `config.local.yaml` from the **process working directory**, then applies declared environment overrides. Unknown non-OpenTelemetry file keys are rejected. See a complete [configuration type](https://github.com/crylabsorg/prostack-go-showcase/blob/main/apps/user/config/config.go) and its [YAML file](https://github.com/crylabsorg/prostack-go-showcase/blob/main/apps/user/config.yaml).
-
-Bootstrap initializes logging, traces, and metrics. Set `OTEL_SERVICE_NAME` for the telemetry resource name; the bootstrap service-name getter does not replace it. For collector-based tracing, configure the OpenTelemetry exporter and endpoint explicitly, as the showcase does. OTLP log exporting requires a separate call to `ps_otel.InitLogs` and its shutdown function; the logger bridge alone does not initialize that exporter.
-
-OpenTelemetry setup installs process-wide providers and propagation and instruments `http.DefaultTransport`. Account for this when integrating with an application that already owns those globals.
-
-### Lifecycle and health
-
-Bootstrap runs `setup` before opening listeners. Its two contexts have different jobs: the work context remains alive while active work drains; the draining context is canceled as soon as shutdown begins. Workers should stop taking new work on draining and close the channel registered with `app.RegisterWorker` when their active work finishes. Cleanup callbacks run in reverse registration order after servers and workers stop or their grace period expires.
-
-`/healthz` indicates that the HTTP process is serving. `/readyz` runs only the probes you register and returns unavailable during draining; it does not discover dependencies or verify an entire event pipeline. `/startupz` is ready by default unless a startup condition is supplied through `ps_healthcheck` directly.
-
-### Errors across gRPC and HTTP
-
-Define service errors as `ps_error.PSError` with an application error code, HTTP status, and gRPC status. Return them from gRPC handlers; `ps_grpc.ErrorInterceptor` adds the transport details. An HTTP gateway then passes the received gRPC error to `ps_controller.Controller.WriteError`, which reads those details instead of maintaining another status map. See [example errors](https://github.com/crylabsorg/prostack-go-showcase/blob/main/apps/user/user/errors.go) and the [HTTP controller](https://github.com/crylabsorg/prostack-go-showcase/blob/main/apps/gateway/user/http.go).
-
-### Events and the transactional outbox
-
-`ps_event` supplies publishing interfaces and a worker. Your application implements persistence: write the business change and outbox row in one transaction, reserve pending rows, and mark only acknowledged events complete. The library does not supply an outbox database schema or consumer deduplication. The showcase's [repository](https://github.com/crylabsorg/prostack-go-showcase/blob/main/apps/user/user/repository.go) and [adapter](https://github.com/crylabsorg/prostack-go-showcase/blob/main/apps/user/user/outbox.go) demonstrate that boundary.
-
-Publishing is **at least once**. Fanout completes only when every publisher succeeds; partial failures retry all publishers. Concurrent processing does not guarantee handler execution order. Your consumers own idempotency and side-effect recovery.
-
-With NATS, your handler owns acknowledgement, retry, or termination of each message. Kafka commits after a successful handler and returns on processing failure; your application owns its restart/backoff loop. Dead-letter handling is application-specific. See the showcase's [NATS](https://github.com/crylabsorg/prostack-go-showcase/blob/main/apps/email/email/nats.go) and [Kafka](https://github.com/crylabsorg/prostack-go-showcase/blob/main/apps/email/email/kafka.go) controllers.
-
-### Deployment context
-
-Review defaults against your environment. The supplied HTTP server serves plaintext; gRPC defaults to plaintext and enables reflection. Add your application's authentication, transport security, ingress limits, secrets, and deployment configuration. The library provides infrastructure building blocks, not a deployment platform or an availability guarantee.
+| Package                                                                         | What you get                                                                                        |
+| ------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
+| [`ps_bootstrap`](ps_bootstrap/bootstrap.go)                                     | Application setup, HTTP and optional gRPC listeners, probes, worker draining, and cleanup.          |
+| [`ps_config`](ps_config/config.go)                                              | Typed configuration from YAML, local overrides, declared environment variables, and validation.     |
+| [`logger`](logger/logger.go)                                                    | Zap development/production presets, context-aware logging, and an OpenTelemetry log bridge.         |
+| [`ps_http`](ps_http/http.go), [`ps_controller`](ps_controller/controller.go)    | Instrumented HTTP serving, JSON responses, and conversion of gRPC error details into HTTP errors.   |
+| [`ps_grpc`](ps_grpc/grpc.go), [`ps_error`](ps_error/error.go)                   | Instrumented gRPC servers/clients, unary recovery/error interceptors, and typed application errors. |
+| [`ps_pg`](ps_pg/pg.go)                                                          | Instrumented pgx connection pools and connection health verification.                               |
+| [`ps_mongo`](ps_mongo/mongo.go)                                                 | Instrumented MongoDB connections and database selection from the URI.                               |
+| [`ps_redis`](ps_redis/redis.go)                                                 | go-redis clients with tracing, metrics, and an initial connection check.                            |
+| [`ps_nats`](ps_nats/nats.go)                                                    | JetStream stream setup, concurrent consumers, publisher support, and trace propagation.             |
+| [`ps_kafka`](ps_kafka/kafka.go)                                                 | Kafka publishing, concurrent consumers, ordered partition commits, and trace propagation.           |
+| [`ps_event`](ps_event/outbox.go)                                                | Outbox/publisher interfaces, a background publishing worker, and fanout to multiple publishers.     |
+| [`ps_otel`](ps_otel/traces.go), [`ps_metrics`](ps_metrics/metrics.go)           | OpenTelemetry initialization and an application Prometheus registry.                                |
+| [`ps_healthcheck`](ps_healthcheck/healthcheck.go)                               | `/healthz`, `/readyz`, and `/startupz` handlers.                                                    |
+| [`ps_swagger`](ps_swagger/swagger.go), [`ps_asyncapi`](ps_asyncapi/asyncapi.go) | Embedded documentation UIs for your supplied OpenAPI and AsyncAPI documents.                        |
+| [`ps_test`](ps_test/postgres.go)                                                | Testcontainers helpers for PostgreSQL, MongoDB, NATS, Kafka, plus gRPC test utilities.              |
 
 ## Development
 
@@ -212,25 +69,25 @@ make test
 
 The test suite uses real containerized dependencies and requires a reachable Docker daemon, tested with Docker **29.8.2**. Library Testcontainers tests do not require the showcase Compose stack.
 
-| Command | Purpose |
-| --- | --- |
-| `make test` | Run all foundation packages, including integration tests. |
-| `make lint` | Install the pinned linter if needed and lint the library. |
+| Command          | Purpose                                                                                                  |
+| ---------------- | -------------------------------------------------------------------------------------------------------- |
+| `make test`      | Run all foundation packages, including integration tests.                                                |
+| `make lint`      | Install the pinned linter if needed and lint the library.                                                |
 | `make proto-gen` | Regenerate the shared error protobuf; requires Buf **1.74.0**. Go generator versions are pinned by Make. |
-| `make mod-tidy` | Reconcile module dependencies after code changes. |
+| `make mod-tidy`  | Reconcile module dependencies after code changes.                                                        |
 
 Reusable [Make fragments](make/) can also be included by a consuming repository. The showcase [Makefile](https://github.com/crylabsorg/prostack-go-showcase/blob/main/Makefile) demonstrates app discovery, build/run/test targets, migrations, and local Compose commands. Those application targets belong to the consuming repository; the foundation's Makefile focuses on library development.
 
 ## Troubleshooting
 
-| Symptom | What to check |
-| --- | --- |
-| Exporters try to reach a local collector | Use the explicit quick-start exporter settings or configure your own OTLP endpoint. |
-| No OpenTelemetry metrics at `/metrics` | Scrape `/otel-metrics` with `OTEL_METRICS_EXPORTER=ps_prometheus`; `/metrics` is a separate registry. |
-| Configuration files are not found | Check the process working directory and your declared configuration tags. |
-| Ctrl+C does not exit immediately | Allow the fixed 10-second load-balancer delay and handler/worker draining to finish. |
-| `/readyz` succeeds while a dependency is unavailable | Register a probe for that dependency; readiness only runs registered checks. |
-| Private or unpublished source cannot be downloaded | Ensure the pinned commit is reachable and configure Git access for the repository, or use a local `replace` while developing. |
+| Symptom                                              | What to check                                                                                                                   |
+| ---------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| Exporters try to reach a local collector             | Use the exporter settings from the [minimal bootstrap example](#minimal-bootstrap-example) or configure your own OTLP endpoint. |
+| No OpenTelemetry metrics at `/metrics`               | Scrape `/otel-metrics` with `OTEL_METRICS_EXPORTER=ps_prometheus`; `/metrics` is a separate registry.                           |
+| Configuration files are not found                    | Check the process working directory and your declared configuration tags.                                                       |
+| Ctrl+C does not exit immediately                     | Allow the fixed 10-second load-balancer delay and handler/worker draining to finish.                                            |
+| `/readyz` succeeds while a dependency is unavailable | Register a probe for that dependency; readiness only runs registered checks.                                                    |
+| Private or unpublished source cannot be downloaded   | Ensure the pinned commit is reachable and configure Git access for the repository, or use a local `replace` while developing.   |
 
 ## Contributing
 
