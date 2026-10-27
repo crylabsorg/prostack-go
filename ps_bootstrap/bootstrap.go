@@ -21,6 +21,7 @@ import (
 	"github.com/crylabsorg/prostack-go/ps_http"
 	"github.com/crylabsorg/prostack-go/ps_metrics"
 	"github.com/crylabsorg/prostack-go/ps_otel"
+	"github.com/crylabsorg/prostack-go/ps_pprof"
 )
 
 type Config interface {
@@ -57,6 +58,7 @@ func Run[C Config](getConfig func() (C, error), setup func(context.Context, cont
 	app := newApp(drainingCtx, cfg.GetGRPCListenAddr())
 	defer ps_otel.InitTraces(workCtx, cfg.GetServiceName())()
 	defer ps_otel.InitMetrics(workCtx, app.mux)()
+	ps_pprof.Register(app.mux)
 	if err := setup(workCtx, drainingCtx, cfg, app); err != nil {
 		logger.GetLogger(workCtx).Fatal("setup failed", zap.Error(err))
 	}
