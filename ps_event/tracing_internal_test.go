@@ -21,7 +21,7 @@ type linkedOutboxMessage struct {
 func (m linkedOutboxMessage) TraceContext() map[string]string { return m.carrier }
 
 //nolint:paralleltest // The test temporarily replaces OpenTelemetry globals.
-func TestOutboxPublicationLinksEachRequest(t *testing.T) {
+func TestOutboxPublicationUsesRequestAsParent(t *testing.T) {
 	recorder := tracetest.NewSpanRecorder()
 	provider := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(recorder))
 	previousProvider := otel.GetTracerProvider()
@@ -56,26 +56,18 @@ func TestOutboxPublicationLinksEachRequest(t *testing.T) {
 		require.NoError(t, result.Err)
 	}
 	publications := 0
+	parents := map[trace.SpanID]bool{}
 	for _, span := range recorder.Ended() {
 		if span.SpanKind() != trace.SpanKindProducer || span.Name() == "publish batch" {
 			continue
 		}
 		publications++
 		require.True(t, span.Parent().IsValid())
-		if len(span.Links()) == 0 {
-			continue
-		}
-		require.Len(t, span.Links(), 1)
-		source := span.Links()[0].SpanContext
-		require.NotEqual(t, source.TraceID(), span.SpanContext().TraceID())
-		require.Contains(t, []trace.SpanContext{sources["first"], sources["second"]}, source.WithRemote(false))
+		parents[span.Parent().SpanID()] = true
+		require.Empty(t, span.Links())
 	}
 	require.Equal(t, 3, publications)
-	linked := 0
-	for _, span := range recorder.Ended() {
-		if len(span.Links()) > 0 {
-			linked++
-		}
+	for _, source := range sources {
+		require.True(t, parents[source.SpanID()])
 	}
-	require.Equal(t, 2, linked)
 }

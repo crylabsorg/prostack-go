@@ -110,13 +110,14 @@ func TestKafkaDeliveryRetryCommitAndTracing(t *testing.T) {
 	}
 	require.Len(t, producerContexts, 2)
 	for _, span := range recorder.Ended() {
-		if span.SpanKind() != trace.SpanKindConsumer {
+		if span.SpanKind() != trace.SpanKindConsumer || span.Name() != "user.created process" {
 			continue
 		}
 		consumerCount++
 		require.False(t, span.Parent().IsValid())
 		require.Len(t, span.Links(), 1)
 		require.Contains(t, producerContexts, span.Links()[0].SpanContext.WithRemote(false))
+		require.NotEqual(t, span.Links()[0].SpanContext.TraceID(), span.SpanContext().TraceID())
 		if span.Status().Code == codes.Error {
 			failedCount++
 			require.NotEmpty(t, span.Events())

@@ -4,12 +4,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"strconv"
 	"sync"
 
 	"github.com/twmb/franz-go/pkg/kgo"
+	"github.com/twmb/franz-go/plugin/kotel"
 	"go.opentelemetry.io/otel"
-	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/baggage"
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
 
@@ -21,7 +21,11 @@ type Publisher struct{ client *kgo.Client }
 var _ ps_event.Publisher = (*Publisher)(nil)
 
 func NewPublisher(brokers ...string) (*Publisher, error) {
-	client, err := kgo.NewClient(kgo.SeedBrokers(brokers...), kgo.AllowAutoTopicCreation())
+	client, err := kgo.NewClient(
+		kgo.SeedBrokers(brokers...),
+		kgo.AllowAutoTopicCreation(),
+		kgo.WithHooks(kotel.NewKotel(kotel.WithTracer(kotel.NewTracer())).Hooks()...),
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -33,25 +37,8 @@ func (p *Publisher) Close() { p.client.Close() }
 func (p *Publisher) Ping(ctx context.Context) error { return p.client.Ping(ctx) }
 
 func (p *Publisher) Publish(ctx context.Context, message ps_event.OutboxMessage) error {
-	ctx, span := otel.Tracer("ps_kafka").Start(
-		ctx,
-		fmt.Sprintf("publish %s", message.Subject()),
-		trace.WithSpanKind(trace.SpanKindProducer),
-		trace.WithAttributes(
-			attribute.String("messaging.system", "kafka"),
-			attribute.String("messaging.destination.name", message.Subject()),
-			attribute.String("messaging.message.id", message.ID()),
-			attribute.String("messaging.operation.name", "publish"),
-			attribute.String("messaging.operation.type", "send"),
-		),
-	)
-	defer span.End()
 	record := &kgo.Record{Topic: message.Subject(), Key: []byte(message.ID()), Value: message.Payload()}
-	otel.GetTextMapPropagator().Inject(ctx, recordCarrier{record})
 	if err := p.client.ProduceSync(ctx, record).FirstErr(); err != nil {
-		span.SetAttributes(attribute.String("error.type", fmt.Sprintf("%T", err)))
-		span.RecordError(err)
-		span.SetStatus(codes.Error, err.Error())
 		return fmt.Errorf("kafka publish %s: %w", message.ID(), err)
 	}
 	return nil
@@ -67,7 +54,9 @@ func RunConsumer(
 	topic, group string,
 	handle func(context.Context, *kgo.Record) error,
 ) error {
+	tracer := kotel.NewTracer(kotel.ConsumerGroup(group), kotel.LinkSpans())
 	client, err := kgo.NewClient(
+		kgo.WithHooks(kotel.NewKotel(kotel.WithTracer(tracer)).Hooks()...),
 		kgo.SeedBrokers(brokers...),
 		kgo.ConsumeTopics(topic),
 		kgo.ConsumerGroup(group),
@@ -165,33 +154,19 @@ func processRecord(
 	group string,
 	handle, commit func(context.Context, *kgo.Record) error,
 ) error {
-	ctx = otel.GetTextMapPropagator().Extract(ctx, recordCarrier{record})
-	publisherContext := trace.SpanContextFromContext(ctx)
-	options := []trace.SpanStartOption{
-		trace.WithNewRoot(),
-		trace.WithSpanKind(trace.SpanKindConsumer),
-		trace.WithAttributes(
-			attribute.String("messaging.system", "kafka"),
-			attribute.String("messaging.destination.name", record.Topic),
-			attribute.String("messaging.message.id", string(record.Key)),
-			attribute.String("messaging.destination.partition.id", strconv.Itoa(int(record.Partition))),
-			attribute.Int64("messaging.kafka.offset", record.Offset),
-			attribute.String("messaging.consumer.group.name", group),
-			attribute.String("messaging.operation.name", "process"),
-			attribute.String("messaging.operation.type", "process"),
-		),
-	}
-	if publisherContext.IsValid() {
-		options = append(options, trace.WithLinks(trace.Link{SpanContext: publisherContext}))
-	}
-	ctx, span := otel.Tracer("ps_kafka").Start(ctx, fmt.Sprintf("process %s", record.Topic), options...)
+	processRecord := *record
+	processRecord.Context = otel.GetTextMapPropagator().Extract(
+		trace.ContextWithSpanContext(ctx, trace.SpanContext{}), kotel.NewRecordCarrier(record),
+	)
+	processCtx, span := kotel.NewTracer(kotel.ConsumerGroup(group), kotel.LinkSpans()).WithProcessSpan(&processRecord)
 	defer span.End()
+	ctx = trace.ContextWithSpan(ctx, span)
+	ctx = baggage.ContextWithBaggage(ctx, baggage.FromContext(processCtx))
 	err := handle(ctx, record)
 	if err == nil {
 		err = commit(ctx, record)
 	}
 	if err != nil {
-		span.SetAttributes(attribute.String("error.type", fmt.Sprintf("%T", err)))
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
 		return fmt.Errorf(
@@ -203,27 +178,4 @@ func processRecord(
 		)
 	}
 	return nil
-}
-
-type recordCarrier struct{ record *kgo.Record }
-
-func (c recordCarrier) Get(key string) string {
-	for _, header := range c.record.Headers {
-		if header.Key == key {
-			return string(header.Value)
-		}
-	}
-	return ""
-}
-
-func (c recordCarrier) Set(key, value string) {
-	c.record.Headers = append(c.record.Headers, kgo.RecordHeader{Key: key, Value: []byte(value)})
-}
-
-func (c recordCarrier) Keys() []string {
-	keys := make([]string, len(c.record.Headers))
-	for i, header := range c.record.Headers {
-		keys[i] = header.Key
-	}
-	return keys
 }
